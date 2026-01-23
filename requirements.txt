@@ -1,0 +1,14 @@
+# Config Explorer - Python Dependencies
+
+# Note: config_explorer library must be installed separately from llm-d-benchmark
+# git clone https://github.com/llm-d/llm-d-benchmark.git
+# pip install -e ./llm-d-benchmark/config_explorer
+
+# The config_explorer library has these dependencies (installed automatically):
+# huggingface_hub>=0.34.4
+# transformers>=4.55.4
+# numpy>=2.3.2
+# pandas>=2.3.1
+# pydantic>=2.11.7
+# PyYAML>=6.0.2
+# scipy>=1.16.1

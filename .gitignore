@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# External dependencies (install separately)
+llm-d-benchmark/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test outputs
+*.log
+results/
+output/
