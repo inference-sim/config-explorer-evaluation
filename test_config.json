@@ -9,6 +9,10 @@
   "block_size": 16,
   "prompt_tokens": 800,
   "prompt_tokens_stdev": 300,
+  "prompt_tokens_min": 100,
+  "prompt_tokens_max": 2000,
   "output_tokens": 400,
-  "output_tokens_stdev": 200
+  "output_tokens_stdev": 200,
+  "output_tokens_min": 50,
+  "output_tokens_max": 1000
 }

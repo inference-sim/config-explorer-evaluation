@@ -30,6 +30,14 @@ def run_blis(
             - max_model_len: Maximum sequence length
             - gpu_memory_utilization: GPU memory utilization fraction
             - block_size: Block size in tokens
+            - prompt_tokens: Mean prompt tokens (optional, for distribution workload)
+            - prompt_tokens_stdev: Prompt tokens std dev (optional)
+            - prompt_tokens_min: Minimum prompt tokens (optional, default: 2)
+            - prompt_tokens_max: Maximum prompt tokens (optional, default: 7000)
+            - output_tokens: Mean output tokens (optional, for distribution workload)
+            - output_tokens_stdev: Output tokens std dev (optional)
+            - output_tokens_min: Minimum output tokens (optional, default: 2)
+            - output_tokens_max: Maximum output tokens (optional, default: 7000)
         qps: Queries per second (arrival rate)
         trace_file: Optional path to trace file (CSV with prompt_tokens,output_tokens)
         num_requests: Number of requests to simulate (default: 500)
@@ -98,10 +106,18 @@ def run_blis(
             cmd.extend(['--prompt-tokens', str(config['prompt_tokens'])])
         if 'prompt_tokens_stdev' in config:
             cmd.extend(['--prompt-tokens-stdev', str(config['prompt_tokens_stdev'])])
+        if 'prompt_tokens_min' in config:
+            cmd.extend(['--prompt-tokens-min', str(config['prompt_tokens_min'])])
+        if 'prompt_tokens_max' in config:
+            cmd.extend(['--prompt-tokens-max', str(config['prompt_tokens_max'])])
         if 'output_tokens' in config:
             cmd.extend(['--output-tokens', str(config['output_tokens'])])
         if 'output_tokens_stdev' in config:
             cmd.extend(['--output-tokens-stdev', str(config['output_tokens_stdev'])])
+        if 'output_tokens_min' in config:
+            cmd.extend(['--output-tokens-min', str(config['output_tokens_min'])])
+        if 'output_tokens_max' in config:
+            cmd.extend(['--output-tokens-max', str(config['output_tokens_max'])])
 
     print(f"\nRunning BLIS simulation:")
     print(f"  QPS: {qps}")
@@ -192,8 +208,12 @@ def main():
         # Optional: workload parameters for distribution mode
         'prompt_tokens': 800,
         'prompt_tokens_stdev': 300,
+        'prompt_tokens_min': 100,
+        'prompt_tokens_max': 2000,
         'output_tokens': 400,
         'output_tokens_stdev': 200,
+        'output_tokens_min': 50,
+        'output_tokens_max': 1000,
     }
 
     # Run simulation at 10 QPS
