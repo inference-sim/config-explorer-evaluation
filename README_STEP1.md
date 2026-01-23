@@ -83,21 +83,6 @@ ls -lh simulation_worker
 cd ..
 ```
 
-### Step 5: Create defaults.yaml for BLIS
-
-BLIS requires a `defaults.yaml` file combining coefficients and workloads:
-
-```bash
-cd inference-sim
-
-# Combine coefficients and workloads into defaults.yaml
-cat coefficients.yaml workloads.yaml > defaults.yaml
-
-# Verify it was created
-ls -lh defaults.yaml
-
-cd ..
-```
 
 ### Step 6: Verify Installation
 
@@ -168,8 +153,12 @@ Create a JSON config file with these parameters:
   "block_size": 16,
   "prompt_tokens": 800,
   "prompt_tokens_stdev": 300,
+  "prompt_tokens_min": 100,
+  "prompt_tokens_max": 2000,
   "output_tokens": 400,
-  "output_tokens_stdev": 200
+  "output_tokens_stdev": 200,
+  "output_tokens_min": 50,
+  "output_tokens_max": 1000
 }
 ```
 
@@ -179,6 +168,16 @@ Create a JSON config file with these parameters:
 - `total_kv_blocks`: **Automatically calculated** by capacity planner
 - `batch_size`: Max concurrent requests
 - `max_scheduled_tokens`: Max tokens per iteration
+
+**Workload parameters** (optional, for distribution mode):
+- `prompt_tokens`: Mean number of prompt tokens
+- `prompt_tokens_stdev`: Standard deviation of prompt tokens
+- `prompt_tokens_min`: Minimum prompt tokens (default: 2)
+- `prompt_tokens_max`: Maximum prompt tokens (default: 7000)
+- `output_tokens`: Mean number of output tokens
+- `output_tokens_stdev`: Standard deviation of output tokens
+- `output_tokens_min`: Minimum output tokens (default: 2)
+- `output_tokens_max`: Maximum output tokens (default: 7000)
 
 ### Using Python API
 
