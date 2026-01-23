@@ -15,21 +15,109 @@ This implements Step 1 of the development roadmap: BLIS single run with capacity
 - `test_blis.py` - Test script for running single simulations
 - `test_config.json` - Example configuration file
 
-## Prerequisites
+## Setup Instructions
 
-1. **Build BLIS** (if not already built):
-   ```bash
-   cd inference-sim
-   git checkout openevolve
-   go build -o simulation_worker main.go
-   cd ..
-   ```
+Follow these steps to set up the environment and run the tests:
 
-2. **Verify defaults.yaml exists**:
-   ```bash
-   ls inference-sim/defaults.yaml
-   ```
-   If missing, it should have been created automatically during the build from coefficients.yaml and workloads.yaml.
+### Step 1: Prerequisites
+
+**System Requirements:**
+- Python ≥ 3.11
+- Go ≥ 1.21 (for building BLIS)
+- Git
+
+**Check your Python version:**
+```bash
+python --version  # Should be 3.11 or higher
+```
+
+### Step 2: Clone and Setup Repository
+
+```bash
+# If you haven't cloned the repo yet
+git clone https://github.com/inference-sim/config-explorer-evaluation.git
+cd config-explorer-evaluation
+
+# Initialize and update submodules (inference-sim)
+git submodule update --init --recursive
+```
+
+### Step 3: Install config_explorer Library
+
+This is the **most important step**. The capacity planner requires the `config_explorer` library from llm-d-benchmark:
+
+```bash
+# Clone llm-d-benchmark repository
+git clone https://github.com/llm-d/llm-d-benchmark.git
+
+# Install config_explorer as an editable package
+pip install -e ./llm-d-benchmark/config_explorer
+```
+
+**Verify installation:**
+```bash
+python -c "from config_explorer.capacity_planner import get_model_info_from_hf; print('✅ config_explorer installed successfully')"
+```
+
+**Troubleshooting:** If you encounter numpy compatibility errors:
+```bash
+pip install --upgrade --force-reinstall scikit-learn pyarrow
+```
+
+### Step 4: Build BLIS Simulator
+
+```bash
+# Navigate to inference-sim directory
+cd inference-sim
+
+# Checkout the openevolve branch (required for trace file support)
+git checkout openevolve
+
+# Build the BLIS binary
+go build -o simulation_worker main.go
+
+# Verify the binary was created
+ls -lh simulation_worker
+
+# Go back to parent directory
+cd ..
+```
+
+### Step 5: Create defaults.yaml for BLIS
+
+BLIS requires a `defaults.yaml` file combining coefficients and workloads:
+
+```bash
+cd inference-sim
+
+# Combine coefficients and workloads into defaults.yaml
+cat coefficients.yaml workloads.yaml > defaults.yaml
+
+# Verify it was created
+ls -lh defaults.yaml
+
+cd ..
+```
+
+### Step 6: Verify Installation
+
+Run the test suite to verify everything is working:
+
+```bash
+# Test 1: Capacity planner standalone
+python capacity_planner.py
+
+# Expected output: Should show KV blocks calculation for Llama-3.1-8B
+# Example: "Total KV Blocks: 29,205"
+
+# Test 2: Run a quick BLIS simulation
+python test_blis.py test_config.json 2.0 30
+
+# Expected output: Should complete with simulation metrics
+# Example: "✅ Simulation completed successfully!"
+```
+
+**If all tests pass, you're ready to go!** 🎉
 
 ## Usage
 
