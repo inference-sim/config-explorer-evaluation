@@ -1,7 +1,7 @@
 {
   "model": "meta-llama/llama-3.1-8b-instruct",
   "hardware": "H100",
-  "tp": 4,
+  "tp": 1,
   "batch_size": 64,
   "max_scheduled_tokens": 2048,
   "max_model_len": 4096,
@@ -10,9 +10,9 @@
   "prompt_tokens": 800,
   "prompt_tokens_stdev": 300,
   "prompt_tokens_min": 100,
-  "prompt_tokens_max": 7000,
+  "prompt_tokens_max": 2000,
   "output_tokens": 400,
   "output_tokens_stdev": 200,
   "output_tokens_min": 50,
-  "output_tokens_max": 7000
+  "output_tokens_max": 1000
 }
