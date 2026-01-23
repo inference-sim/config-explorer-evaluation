@@ -329,13 +329,13 @@ python main.py \
 
 | Step | Effort | Dependencies |
 |------|--------|--------------|
-| 1. Infrastructure | 2-3 days | None |
-| 2. Binary Search | 1-2 days | Step 1 |
-| 3. Search Space | 1-2 days | Step 2 |
+| 1. Basic Infrastructure & Single Simulation | 2-3 days | None |
+| 2. Binary Search for Max QPS | 1-2 days | Step 1 |
+| 3. Search Space & Multi-Config Evaluation | 1-2 days | Step 2 |
 | 4. Parallel Execution | 2-3 days | Step 3 |
-| 5. Performance Prediction | 2-3 days | Step 3 |
+| 5. Performance Prediction & Filtering | 2-3 days | Step 3 |
 | 6. Bayesian Optimization | 3-4 days | Steps 4-5 |
-| 7. Polish | 2-3 days | Steps 1-6 |
+| 7. Polish & Production-Ready Features | 2-3 days | Steps 1-6 |
 | **Total** | **13-20 days** | |
 
 ---
