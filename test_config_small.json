@@ -7,6 +7,8 @@
   "max_model_len": 2048,
   "gpu_memory_utilization": 0.85,
   "block_size": 16,
+  "num_requests": 100,
+  "prefix_tokens": 0,
   "prompt_tokens": 500,
   "prompt_tokens_stdev": 200,
   "prompt_tokens_min": 50,
@@ -14,5 +16,8 @@
   "output_tokens": 300,
   "output_tokens_stdev": 150,
   "output_tokens_min": 25,
-  "output_tokens_max": 800
+  "output_tokens_max": 800,
+  "slos": [
+    {"metric": "e2e_p95_ms", "threshold_ms": 5000}
+  ]
 }

@@ -14,7 +14,7 @@ def run_blis(
     config: Dict,
     qps: float,
     trace_file: Optional[str] = None,
-    num_requests: int = 500,
+    num_requests: Optional[int] = None,
     timeout: int = 300
 ) -> Dict:
     """
@@ -30,6 +30,8 @@ def run_blis(
             - max_model_len: Maximum sequence length
             - gpu_memory_utilization: GPU memory utilization fraction
             - block_size: Block size in tokens
+            - num_requests: Number of requests to simulate (optional, default: 500)
+            - prefix_tokens: Number of prefix tokens (optional, default: 0)
             - prompt_tokens: Mean prompt tokens (optional, for distribution workload)
             - prompt_tokens_stdev: Prompt tokens std dev (optional)
             - prompt_tokens_min: Minimum prompt tokens (optional, default: 2)
@@ -38,9 +40,11 @@ def run_blis(
             - output_tokens_stdev: Output tokens std dev (optional)
             - output_tokens_min: Minimum output tokens (optional, default: 2)
             - output_tokens_max: Maximum output tokens (optional, default: 7000)
+            - slos: List of SLO constraints (optional, for qps_search)
+                    e.g., [{"metric": "e2e_p95_ms", "threshold_ms": 1000}]
         qps: Queries per second (arrival rate)
         trace_file: Optional path to trace file (CSV with prompt_tokens,output_tokens)
-        num_requests: Number of requests to simulate (default: 500)
+        num_requests: Number of requests to simulate (optional, overrides config value, default: 500)
         timeout: Timeout in seconds (default: 300)
 
     Returns:
@@ -51,6 +55,10 @@ def run_blis(
         - throughput_qps: Achieved throughput
         - etc.
     """
+    # Get num_requests from config if not provided as argument
+    if num_requests is None:
+        num_requests = config.get('num_requests', 500)
+
     # Calculate total_kv_blocks from max_model_len and gpu_memory_utilization
     total_kv_blocks = calculate_total_kv_blocks(
         model=config['model'],
@@ -84,6 +92,7 @@ def run_blis(
         '--model', config['model'],
         '--hardware', config['hardware'],
         '--tp', str(config['tp']),
+        '--vllm-version', 'vllm/vllm-openai:v0.8.4',
         '--rate', str(qps),
         '--max-prompts', str(num_requests),
         '--max-num-running-reqs', str(config['batch_size']),
@@ -102,6 +111,8 @@ def run_blis(
     else:
         # Use distribution workload with default parameters
         cmd.extend(['--workload', 'distribution'])
+        if 'prefix_tokens' in config:
+            cmd.extend(['--prefix-tokens', str(config['prefix_tokens'])])
         if 'prompt_tokens' in config:
             cmd.extend(['--prompt-tokens', str(config['prompt_tokens'])])
         if 'prompt_tokens_stdev' in config:
@@ -121,6 +132,7 @@ def run_blis(
 
     print(f"\nRunning BLIS simulation:")
     print(f"  QPS: {qps}")
+    print(f"  Num Requests: {num_requests}")
     print(f"  Batch Size: {config['batch_size']}")
     print(f"  Max Scheduled Tokens: {config['max_scheduled_tokens']}")
     print(f"  Max Model Length: {config['max_model_len']}")
@@ -206,6 +218,7 @@ def main():
         'gpu_memory_utilization': 0.90,
         'block_size': 16,
         # Optional: workload parameters for distribution mode
+        'prefix_tokens': 0,
         'prompt_tokens': 800,
         'prompt_tokens_stdev': 300,
         'prompt_tokens_min': 100,

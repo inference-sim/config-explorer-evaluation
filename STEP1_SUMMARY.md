@@ -175,14 +175,29 @@ total_blocks = total_kv_cache_blocks(
 
 ## Metrics Returned by BLIS
 
-- `e2e_p90_ms`, `e2e_p95_ms`, `e2e_p99_ms`: End-to-end latency percentiles
-- `ttft_p90_ms`, `ttft_p95_ms`, `ttft_p99_ms`: Time to first token percentiles
-- `itl_p90_ms`, `itl_p95_ms`, `itl_p99_ms`: Inter-token latency percentiles
-- `responses_per_sec`: Actual throughput achieved
+BLIS returns comprehensive metrics including:
+
+**End-to-End Latency:**
+- Mean, Median, P50, P90, P95, P99, Max (ms)
+
+**Time to First Token (TTFT):**
+- Mean, Median, P50, P90, P95, P99, Max (ms)
+
+**Inter-Token Latency (ITL):**
+- Mean, Median, P50, P90, P95, P99, Max (ms)
+
+**Throughput:**
+- `responses_per_sec`: Request throughput (QPS)
 - `tokens_per_sec`: Token throughput
-- `completed_requests`: Number of requests completed
+
+**Request Stats:**
+- `completed_requests`, `failed_requests`, `total_requests`
+
+**Configuration:**
 - `total_kv_blocks`: Calculated KV cache blocks (from config_explorer)
 - `qps`: Requested arrival rate
+
+All metrics are displayed comprehensively in Step 2 (qps_search.py) output.
 
 ## Advantages of config_explorer Integration
 

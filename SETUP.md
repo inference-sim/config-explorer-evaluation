@@ -1,6 +1,6 @@
 # Quick Setup Guide
 
-Complete setup instructions for running Step 1: BLIS Runner with Capacity Planner.
+Complete setup instructions for running Steps 1 & 2: BLIS Runner with Capacity Planner and Binary Search for Max QPS.
 
 ## Prerequisites
 
@@ -111,7 +111,9 @@ pip install --upgrade --force-reinstall scikit-learn pyarrow
 
 ## Usage
 
-Once installed, you can:
+Once installed, you can run both Step 1 and Step 2 tools:
+
+### Step 1: Single Simulation Run
 
 ```bash
 # Run capacity planner
@@ -124,6 +126,35 @@ python test_blis.py <config.json> <qps> <num_requests>
 python test_blis.py test_config.json 5.0 50
 ```
 
+### Step 2: Binary Search for Max QPS
+
+```bash
+# Basic search (num_requests and SLOs from config file)
+python qps_search.py --config test_config.json
+
+# Quick test with test_config_small.json (has num_requests: 100)
+python qps_search.py -c test_config_small.json
+
+# With trace file
+python qps_search.py -c test_config.json --trace traces/chat.csv
+
+# Custom search parameters
+python qps_search.py -c test_config.json --qps-max 50 --qps-granularity 0.1
+```
+
+**Note**: Your config file must include `"num_requests"` and `"slos"` fields:
+```json
+{
+  "model": "...",
+  "num_requests": 500,
+  "slos": [
+    {"metric": "e2e_p95_ms", "threshold_ms": 1000}
+  ],
+  ...
+}
+```
+
 ## Next Steps
 
-See [README_STEP1.md](README_STEP1.md) for detailed usage instructions and API examples.
+- See [README_STEP1.md](README_STEP1.md) for Step 1 detailed usage and API examples
+- See [README_STEP2.md](README_STEP2.md) for Step 2 binary search documentation

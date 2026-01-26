@@ -199,20 +199,31 @@ if metrics:
 
 ## Output Metrics
 
-BLIS returns the following metrics:
+BLIS returns comprehensive metrics including:
 
-- `e2e_p90_ms`: 90th percentile end-to-end latency (ms)
-- `e2e_p95_ms`: 95th percentile end-to-end latency (ms)
-- `e2e_p99_ms`: 99th percentile end-to-end latency (ms)
-- `ttft_p90_ms`: 90th percentile time to first token (ms)
-- `ttft_p95_ms`: 95th percentile time to first token (ms)
-- `ttft_p99_ms`: 99th percentile time to first token (ms)
-- `itl_p90_ms`: 90th percentile inter-token latency (ms)
-- `responses_per_sec`: Throughput (QPS)
+**End-to-End Latency:**
+- Mean, Median, P50, P90, P95, P99, Max (all in ms)
+
+**Time to First Token (TTFT):**
+- Mean, Median, P50, P90, P95, P99, Max (all in ms)
+
+**Inter-Token Latency (ITL):**
+- Mean, Median, P50, P90, P95, P99, Max (all in ms)
+
+**Throughput:**
+- `responses_per_sec`: Request throughput (QPS)
 - `tokens_per_sec`: Token throughput
+
+**Request Stats:**
 - `completed_requests`: Number of completed requests
+- `failed_requests`: Number of failed requests
+- `total_requests`: Total requests
+
+**Configuration:**
 - `total_kv_blocks`: Calculated KV cache blocks (from capacity planner)
 - `qps`: Requested arrival rate
+
+**Note:** Step 2 (qps_search.py) displays all these metrics comprehensively at the end of the binary search.
 
 ## Example Output
 
