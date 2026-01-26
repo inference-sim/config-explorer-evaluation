@@ -15,7 +15,8 @@ def run_blis(
     qps: float,
     trace_file: Optional[str] = None,
     num_requests: Optional[int] = None,
-    timeout: int = 300
+    timeout: int = 300,
+    verbose: bool = True
 ) -> Dict:
     """
     Run BLIS simulation with given configuration and QPS.
@@ -47,6 +48,7 @@ def run_blis(
         trace_file: Optional path to trace file (CSV with prompt_tokens,output_tokens)
         num_requests: Number of requests to simulate (optional, overrides config value, default: 500)
         timeout: Timeout in seconds (default: 300)
+        verbose: If True, print detailed simulation info (default: True)
 
     Returns:
         Dictionary with simulation results including:
@@ -134,15 +136,16 @@ def run_blis(
         if 'output_tokens_max' in config:
             cmd.extend(['--output-tokens-max', str(config['output_tokens_max'])])
 
-    print(f"\nRunning BLIS simulation:")
-    print(f"  QPS: {qps}")
-    print(f"  Num Requests: {num_requests}")
-    print(f"  Batch Size: {config['batch_size']}")
-    print(f"  Max Scheduled Tokens: {config['max_scheduled_tokens']}")
-    print(f"  Max Model Length: {config['max_model_len']}")
-    print(f"  GPU Memory Utilization: {config['gpu_memory_utilization']}")
-    print(f"  Total KV Blocks: {total_kv_blocks}")
-    print(f"  Command: {' '.join(cmd)}\n")
+    if verbose:
+        print(f"\nRunning BLIS simulation:")
+        print(f"  QPS: {qps}")
+        print(f"  Num Requests: {num_requests}")
+        print(f"  Batch Size: {config['batch_size']}")
+        print(f"  Max Scheduled Tokens: {config['max_scheduled_tokens']}")
+        print(f"  Max Model Length: {config['max_model_len']}")
+        print(f"  GPU Memory Utilization: {config['gpu_memory_utilization']}")
+        print(f"  Total KV Blocks: {total_kv_blocks}")
+        print(f"  Command: {' '.join(cmd)}\n")
 
     # Run simulation
     try:

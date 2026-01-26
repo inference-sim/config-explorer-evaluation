@@ -41,7 +41,7 @@ The simulators predict LLM serving performance (TTFT, TPOT, throughput) without 
     ├── capacity_planner.py    # ✅ Step 1: Wrapper for config_explorer library
     ├── qps_search.py          # ✅ Step 2: Binary search for max QPS with multi-SLO support
     ├── test_blis.py           # ✅ Step 1: Test script for single simulation runs
-    ├── parallel_search.py     # ⏳ Step 3: Parallel config evaluation
+    ├── parallel_search.py     # ✅ Step 3: Parallel config evaluation
     ├── vidur_wrapper.py       # ⏳ Step 4: Vidur config generator + runner
     ├── config_search.py       # ⏳ Step 5: Main CLI
     ├── requirements.txt       # Python dependencies
@@ -49,11 +49,13 @@ The simulators predict LLM serving performance (TTFT, TPOT, throughput) without 
     ├── test_config_small.json # Example small config
     ├── README_STEP1.md        # ✅ Step 1 documentation
     ├── README_STEP2.md        # ✅ Step 2 documentation
+    ├── README_STEP3.md        # ✅ Step 3 documentation
     ├── STEP1_SUMMARY.md       # ✅ Step 1 implementation summary
     ├── STEP2_SUMMARY.md       # ✅ Step 2 implementation summary
+    ├── STEP3_SUMMARY.md       # ✅ Step 3 implementation summary
     ├── SETUP.md               # ✅ Quick setup guide for Steps 1 & 2
     └── examples/
-        ├── configs_blis.yaml      # BLIS config space examples
+        ├── configs_explicit.yaml      # ✅ BLIS config space examples
         ├── configs_vidur.yaml     # Vidur config space examples
         └── traces/                # Workload trace files (prompt_tokens, output_tokens)
 
@@ -234,15 +236,19 @@ python qps_search.py -c test_config.json --trace traces/chat.csv
 python qps_search.py -c test_config.json --qps-granularity 0.01
 ```
 
-**⏳ Step 3: Parallel config search (Planned)**
+**✅ Step 3: Parallel config search**
 ```bash
-# Note: Use openevolve branch of inference-sim
-python config_search.py \
-  --simulator blis \
-  --configs configs_blis.yaml \
-  --trace traces/chat.csv \
-  --slo-p90-ms 1000 \
-  --num-workers 8
+# Basic usage
+python parallel_search.py --configs examples/configs_explicit.yaml
+
+# With trace file
+python parallel_search.py -c examples/configs_explicit.yaml --trace traces/chat.csv
+
+# Specify number of workers
+python parallel_search.py -c examples/configs_explicit.yaml --num-workers 8
+
+# Save results to JSON
+python parallel_search.py -c examples/configs_explicit.yaml --output results.json
 ```
 
 **⏳ Step 4: Vidur-based search (Planned)**
@@ -283,7 +289,7 @@ configs:
 **Key features:**
 - ✅ **Step 1**: BLIS runner with automatic `total_kv_blocks` calculation via config_explorer library
 - ✅ **Step 2**: Discrete binary search to find max QPS with multi-SLO support (configurable granularity)
-- ⏳ **Step 3**: Parallel evaluation of multiple configs (planned)
+- ✅ **Step 3**: Parallel config evaluation with grid search (automatic Cartesian product), verbose mode control, and detailed metrics display
 - ⏳ **Step 5**: JSON output with best config and all results (planned)
 - Support for custom workload trace files (CSV format: prompt_tokens, output_tokens)
 - Config-based SLO definitions for reproducibility
@@ -448,13 +454,13 @@ blocks = total_kv_cache_blocks(
 - **BLIS Runner** (`blis_runner.py`): Wraps BLIS simulation_worker CLI, parses JSON output metrics (TTFT, TPOT, E2E latency percentiles)
 - **Capacity Planner** (`capacity_planner.py`): Uses config_explorer library to calculate `total_kv_blocks` from model architecture, GPU memory (80GB for H100), `max_model_len`, and `gpu_memory_utilization` target
 - **QPS Search** (`qps_search.py`): ✅ **Step 2 Complete** - Discrete binary search algorithm to find max QPS where **multiple SLO constraints** are met (configurable granularity, default: 0.01 QPS precision)
-- **Parallel Search** (`parallel_search.py`): ⏳ **Step 3** - Multiprocessing pool to evaluate N configs concurrently, returns best config by max QPS
+- **Parallel Search** (`parallel_search.py`): ✅ **Step 3 Complete** - Multiprocessing pool to evaluate N configs concurrently, returns best config by max QPS. Features: grid search (automatic Cartesian product from parameter lists), explicit configs (backward compatible), verbose mode control for clean output, detailed BLIS metrics display for best config, automatic ranking.
 - **Vidur Wrapper** (`vidur_wrapper.py`): ⏳ **Step 4** - Generates Vidur YAML configs and invokes built-in config_explorer
 
 **Implementation Status:**
 - ✅ Step 1: BLIS Runner + Capacity Planner (Complete)
 - ✅ Step 2: Binary Search for Max QPS (Complete)
-- ⏳ Step 3: Parallel Config Search (Pending)
+- ✅ Step 3: Parallel Config Search (Complete)
 - ⏳ Step 4: Vidur Wrapper (Pending)
 - ⏳ Step 5: Polish + Documentation (Pending)
 
@@ -521,9 +527,9 @@ When modifying Config Search Tool:
   - Uses numpy array for discrete QPS values with configurable granularity
   - CLI: `python qps_search.py --config <file.json> [OPTIONS]`
   - Python API: `find_max_qps(config, slos, qps_granularity)`
-- Parallelization: `parallel_search.py` (multiprocessing pool) - ⏳ Step 3
+- Parallelization: `parallel_search.py` (multiprocessing pool) - ✅ Step 3
 - Vidur integration: `vidur_wrapper.py` (YAML generation, result parsing) - ⏳ Step 4
-- Config spaces defined in YAML: `examples/configs_blis.yaml`, `configs_vidur.yaml` - ⏳ Step 3
+- Config spaces defined in YAML: `examples/configs_explicit.yaml`, `configs_vidur.yaml` - ✅ Step 3
 - Workload traces: CSV format with columns `prompt_tokens`, `output_tokens`
 
 **Development workflow:**
@@ -628,9 +634,17 @@ python qps_search.py --config test_config.json
 python qps_search.py --config test_config_small.json
 ```
 
-**⏳ Step 3-5 - Coming soon:**
-- Parallel config search
+**✅ Step 3 - Parallel search:**
+```bash
+# Basic parallel config search
+python parallel_search.py --configs examples/configs_explicit.yaml
+
+# With custom workers
+python parallel_search.py -c examples/configs_explicit.yaml --num-workers 4
+```
+
+**⏳ Step 4-5 - Coming soon:**
 - Vidur integration
 - Unified CLI
 
-See [SETUP.md](SETUP.md), [README_STEP1.md](README_STEP1.md), and [README_STEP2.md](README_STEP2.md) for detailed instructions.
+See [SETUP.md](SETUP.md), [README_STEP1.md](README_STEP1.md), [README_STEP2.md](README_STEP2.md), and [README_STEP3.md](README_STEP3.md) for detailed instructions.

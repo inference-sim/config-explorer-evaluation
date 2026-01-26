@@ -28,8 +28,8 @@ def display_metrics_category(metrics: Dict, prefix: str, category_name: str) -> 
 
     print(f"\n  {category_name}:")
     # Define metric order
-    metric_suffixes = ['mean_ms', 'median_ms', 'p50_ms', 'p90_ms', 'p95_ms', 'p99_ms', 'max_ms']
-    metric_labels = ['Mean', 'Median', 'P50', 'P90', 'P95', 'P99', 'Max']
+    metric_suffixes = ['mean_ms', 'p90_ms', 'p95_ms', 'p99_ms']
+    metric_labels = ['Mean', 'P90', 'P95', 'P99']
 
     for suffix, label in zip(metric_suffixes, metric_labels):
         key = f"{prefix}{suffix}"
@@ -72,7 +72,8 @@ def find_max_qps(
     trace_file: Optional[str] = None,
     qps_min: float = MIN_RPS_FOR_BINARY_SEARCH,
     qps_max: float = MAX_RPS_FOR_BINARY_SEARCH,
-    qps_granularity: float = RPS_GRANULARITY_FOR_BINARY_SEARCH
+    qps_granularity: float = RPS_GRANULARITY_FOR_BINARY_SEARCH,
+    verbose: bool = True
 ) -> Tuple[float, Dict]:
     """
     Find maximum QPS where all SLO constraints are met using binary search.
@@ -88,6 +89,7 @@ def find_max_qps(
         qps_min: Minimum QPS to search (default: 0.1)
         qps_max: Maximum QPS to search (default: 100.0)
         qps_granularity: QPS step size (default: 0.01)
+        verbose: If True, print detailed iteration logs (default: True)
 
     Returns:
         Tuple of (max_qps, metrics) where max_qps is the highest QPS meeting all SLOs
@@ -101,16 +103,18 @@ def find_max_qps(
 
     # Get num_requests from config, default to 500
     num_requests = config.get('num_requests', 500)
-    print(f"\n{'='*60}")
-    print(f"Starting Binary Search for Max QPS")
-    print(f"{'='*60}")
-    print(f"SLO Constraints:")
-    for slo in slos:
-        print(f"  {slo['metric']} < {slo['threshold_ms']} ms")
-    print(f"Search Range: [{qps_min}, {qps_max}] QPS")
-    print(f"Granularity: {qps_granularity} QPS")
-    print(f"Requests per simulation: {num_requests}")
-    print(f"{'='*60}\n")
+
+    if verbose:
+        print(f"\n{'='*60}")
+        print(f"Starting Binary Search for Max QPS")
+        print(f"{'='*60}")
+        print(f"SLO Constraints:")
+        for slo in slos:
+            print(f"  {slo['metric']} < {slo['threshold_ms']} ms")
+        print(f"Search Range: [{qps_min}, {qps_max}] QPS")
+        print(f"Granularity: {qps_granularity} QPS")
+        print(f"Requests per simulation: {num_requests}")
+        print(f"{'='*60}\n")
 
     # Create discrete QPS values array
     # Note: np.arange(0.1, 100.0, 0.01) creates values up to 99.99 (not 100.0)
@@ -129,15 +133,16 @@ def find_max_qps(
         mid_idx = (low_idx + high_idx) // 2
         test_qps = qps_values[mid_idx]
 
-        print(f"Iteration {iteration}: Testing QPS = {test_qps:.2f} (index {mid_idx}/{len(qps_values)-1})")
+        if verbose:
+            print(f"Iteration {iteration}: Testing QPS = {test_qps:.2f} (index {mid_idx}/{len(qps_values)-1})")
 
         # Run simulation
-        metrics = run_blis(config, test_qps, trace_file, num_requests)
+        metrics = run_blis(config, test_qps, trace_file, num_requests, verbose=verbose)
 
         # Check if any SLO violated
         slo_violated, violated_list = violates_slo(metrics, slos)
 
-        if metrics:
+        if verbose and metrics:
             # Print all SLO metrics
             for slo in slos:
                 metric_value = metrics.get(slo['metric'], float('inf'))
@@ -145,36 +150,42 @@ def find_max_qps(
                 print(f"  {status} {slo['metric']}: {metric_value:.2f} ms (SLO: {slo['threshold_ms']} ms)")
 
         if slo_violated:
-            print(f"  ❌ SLO violated: {', '.join(violated_list)}")
-            print(f"  Searching lower")
+            if verbose:
+                print(f"  ❌ SLO violated: {', '.join(violated_list)}")
+                print(f"  Searching lower")
             high_idx = mid_idx - 1
         else:
-            print(f"  ✅ All SLOs met, searching higher")
+            if verbose:
+                print(f"  ✅ All SLOs met, searching higher")
             max_qps = test_qps
             best_metrics = metrics
             low_idx = mid_idx + 1
-        print()
+
+        if verbose:
+            print()
 
     # Handle edge case: SLO met at all QPS values
     if max_qps == -1:
-        print(f"⚠️  SLO violated at all tested QPS values up to {qps_max}")
+        if verbose:
+            print(f"⚠️  SLO violated at all tested QPS values up to {qps_max}")
         max_qps = qps_max
         # Run at max to get metrics
-        best_metrics = run_blis(config, qps_max, trace_file, num_requests) or {}
+        best_metrics = run_blis(config, qps_max, trace_file, num_requests, verbose=verbose) or {}
 
-    print(f"{'='*60}")
-    print(f"Binary Search Complete")
-    print(f"{'='*60}")
-    print(f"Max QPS meeting all SLOs: {max_qps:.2f} QPS")
-    if best_metrics:
-        print(f"\nSLO Metrics at Max QPS:")
-        for slo in slos:
-            metric_value = best_metrics.get(slo['metric'], 0)
-            status = "✅" if metric_value <= slo['threshold_ms'] else "❌"
-            print(f"  {status} {slo['metric']}: {metric_value:.2f} ms (SLO: {slo['threshold_ms']} ms)")
-        print(f"\nThroughput: {best_metrics.get('responses_per_sec', 0):.2f} QPS")
-        print(f"Total KV Blocks: {best_metrics.get('total_kv_blocks', 0)}")
-    print(f"{'='*60}\n")
+    if verbose:
+        print(f"{'='*60}")
+        print(f"Binary Search Complete")
+        print(f"{'='*60}")
+        print(f"Max QPS meeting all SLOs: {max_qps:.2f} QPS")
+        if best_metrics:
+            print(f"\nSLO Metrics at Max QPS:")
+            for slo in slos:
+                metric_value = best_metrics.get(slo['metric'], 0)
+                status = "✅" if metric_value <= slo['threshold_ms'] else "❌"
+                print(f"  {status} {slo['metric']}: {metric_value:.2f} ms (SLO: {slo['threshold_ms']} ms)")
+            print(f"\nThroughput: {best_metrics.get('responses_per_sec', 0):.2f} QPS")
+            print(f"Total KV Blocks: {best_metrics.get('total_kv_blocks', 0)}")
+        print(f"{'='*60}\n")
 
     return max_qps, best_metrics
 
@@ -211,9 +222,9 @@ Config file format:
   }
 
 Available SLO metrics (any BLIS metric):
-  End-to-End: e2e_mean_ms, e2e_median_ms, e2e_p50_ms, e2e_p90_ms, e2e_p95_ms, e2e_p99_ms, e2e_max_ms
-  TTFT:       ttft_mean_ms, ttft_median_ms, ttft_p50_ms, ttft_p90_ms, ttft_p95_ms, ttft_p99_ms, ttft_max_ms
-  ITL:        itl_mean_ms, itl_median_ms, itl_p50_ms, itl_p90_ms, itl_p95_ms, itl_p99_ms, itl_max_ms
+  End-to-End: e2e_mean_ms, e2e_p90_ms, e2e_p95_ms, e2e_p99_ms
+  TTFT:       ttft_mean_ms, ttft_p90_ms, ttft_p95_ms, ttft_p99_ms
+  ITL:        itl_mean_ms, itl_p90_ms, itl_p95_ms, itl_p99_ms
         '''
     )
 

@@ -316,7 +316,7 @@ config_search/
 └── config_search.py       # Main CLI
 
 examples/
-├── configs_blis.yaml      # Example BLIS config space
+├── configs_explicit.yaml      # Example BLIS config space
 ├── configs_vidur.yaml     # Example Vidur config space
 └── traces/
     └── chat.csv           # prompt_tokens,output_tokens

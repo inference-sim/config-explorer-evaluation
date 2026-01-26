@@ -27,3 +27,4 @@ Thumbs.db
 *.log
 results/
 output/
+results.json
