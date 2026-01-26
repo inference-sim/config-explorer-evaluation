@@ -13,8 +13,11 @@
 
 **Key Features**:
 - **Parallel evaluation**: Uses `multiprocessing.Pool` to evaluate N configs simultaneously
+- **TP search support**: Tensor parallelism is now a searchable parameter (e.g., tp: [1, 2, 4])
 - **Grid search (NEW!)**: Automatic Cartesian product from parameter lists
 - **Explicit configs**: Backward-compatible manual config list format
+- **Roofline model support**: Optional `model_config_folder_base` and `hardware_config` for performance modeling
+- **BLIS_ROOT environment variable**: Portable path resolution relative to project root
 - **Automatic KV blocks calculation**: Calls `calculate_total_kv_blocks()` for each config
 - **Binary search integration**: Calls `find_max_qps()` from Step 2 for each config
 - **Multi-SLO support**: Inherited from Step 2, supports any combination of SLO metrics
@@ -87,6 +90,10 @@ config-explorer-evaluation/
 model: codellama/CodeLlama-34b-Instruct-hf
 hardware: H100
 num_requests: 100
+
+# Roofline model parameters (paths relative to BLIS_ROOT env var)
+model_config_folder_base: model_configs
+hardware_config: hardware_config.json
 
 # SLO constraints (applied to all configs)
 slos:

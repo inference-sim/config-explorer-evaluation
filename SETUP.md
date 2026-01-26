@@ -1,6 +1,6 @@
 # Quick Setup Guide
 
-Complete setup instructions for running Steps 1 & 2: BLIS Runner with Capacity Planner and Binary Search for Max QPS.
+Complete setup instructions for running Steps 1, 2 & 3: BLIS Runner with Capacity Planner, Binary Search for Max QPS, and Parallel Config Search.
 
 ## Prerequisites
 
@@ -41,7 +41,7 @@ pip install --upgrade --force-reinstall scikit-learn pyarrow
 ```bash
 cd inference-sim
 git checkout openevolve
-go build -o simulation_worker main.go
+go build -o ../simulation_worker main.go
 
 # Create defaults.yaml
 cat coefficients.yaml workloads.yaml > defaults.yaml
@@ -49,7 +49,22 @@ cat coefficients.yaml workloads.yaml > defaults.yaml
 cd ..
 ```
 
-### 4. Test Installation
+### 4. Set Environment Variables (Recommended)
+
+```bash
+# Set BLIS_ROOT to your config-explorer-evaluation directory
+export BLIS_ROOT=$(pwd)
+
+# Or add to your shell profile (~/.bashrc, ~/.zshrc, etc.)
+echo "export BLIS_ROOT=$(pwd)" >> ~/.bashrc
+```
+
+**What is BLIS_ROOT?**
+- Environment variable pointing to the config-explorer-evaluation root directory
+- Defaults to current directory if not set
+- All relative paths in configs are resolved relative to BLIS_ROOT
+
+### 5. Test Installation
 
 ```bash
 # Test capacity planner
@@ -154,7 +169,33 @@ python qps_search.py -c test_config.json --qps-max 50 --qps-granularity 0.1
 }
 ```
 
+### Step 3: Parallel Config Search
+
+```bash
+# Grid search (evaluates all TP, batch size, etc. combinations)
+python parallel_search.py --configs examples/configs_grid_search.yaml
+
+# Explicit configs
+python parallel_search.py --configs examples/configs_explicit.yaml
+
+# With custom workers
+python parallel_search.py -c examples/configs_grid_search.yaml --num-workers 4
+
+# Save results to JSON
+python parallel_search.py -c examples/configs_grid_search.yaml --output results.json
+```
+
+**Grid search example** sweeps over:
+- TP: [1, 2]
+- Batch sizes: [128, 256, 512]
+- Max scheduled tokens: [2048, 4096]
+- Max model length: [4096, 8192]
+- GPU memory utilization: [0.90]
+
+This automatically generates all combinations (24 configs) and finds the best one.
+
 ## Next Steps
 
 - See [README_STEP1.md](README_STEP1.md) for Step 1 detailed usage and API examples
 - See [README_STEP2.md](README_STEP2.md) for Step 2 binary search documentation
+- See [README_STEP3.md](README_STEP3.md) for Step 3 parallel config search documentation

@@ -7,12 +7,26 @@ Parallel config search evaluates multiple vLLM configurations concurrently to fi
 ## Features
 
 - **Parallel Evaluation**: Uses Python multiprocessing to evaluate N configs simultaneously
+- **TP Search Support**: Sweep over tensor parallelism values (1, 2, 4, etc.)
+- **Grid Search & Explicit Configs**: Two formats for defining config spaces
 - **Automatic KV Blocks Calculation**: Calculates `total_kv_blocks` for each config
 - **Binary Search Integration**: Calls `find_max_qps()` for each config
+- **Roofline Model Support**: Optional hardware config for performance modeling
 - **YAML Config Space**: Define config search space in YAML format
 - **Multi-SLO Support**: Supports multiple simultaneous SLO constraints
 - **Results Ranking**: Automatically ranks configs by max QPS
 - **JSON Output**: Optionally save detailed results to JSON file
+
+## Environment Variables
+
+- **BLIS_ROOT**: Root directory for BLIS paths (default: current directory)
+  - All relative paths in configs are resolved relative to `BLIS_ROOT`
+  - Set this to your config-explorer-evaluation directory
+
+```bash
+export BLIS_ROOT=/path/to/config-explorer-evaluation
+python parallel_search.py --configs examples/configs_grid_search.yaml
+```
 
 ## Usage
 
@@ -69,6 +83,10 @@ Specify lists of values for each parameter. All combinations are automatically g
 model: meta-llama/llama-3.1-8b-instruct
 hardware: H100
 num_requests: 500
+
+# Roofline model parameters (paths relative to BLIS_ROOT env var)
+model_config_folder_base: model_configs
+hardware_config: hardware_config.json
 
 # SLO constraints (applied to all configs)
 slos:
@@ -138,6 +156,7 @@ configs:
 - `slos`: List of SLO constraints
 
 **Each Config (Explicit Format):**
+- `tp`: Tensor parallelism size (must be explicit)
 - `batch_size`: Max requests in batch
 - `max_scheduled_tokens`: Max tokens per iteration
 - `max_model_len`: Max sequence length
@@ -145,7 +164,7 @@ configs:
 - `block_size`: KV cache block size (default: 16)
 
 **Grid Search Parameters (Grid Format):**
-- `tp`: Tensor parallelism size (can be list for sweep, default: [1])
+- `tp`: Tensor parallelism size (list for sweep, e.g., [1, 2, 4])
 - `batch_size`: Max requests in batch (list of values)
 - `max_scheduled_tokens`: Max tokens per iteration (list of values)
 - `max_model_len`: Max sequence length (list of values)
