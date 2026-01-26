@@ -14,6 +14,29 @@ MAX_RPS_FOR_BINARY_SEARCH = 100.0
 RPS_GRANULARITY_FOR_BINARY_SEARCH = 0.01
 
 
+def display_metrics_category(metrics: Dict, prefix: str, category_name: str) -> None:
+    """
+    Display metrics for a specific category (e2e, ttft, or itl).
+
+    Args:
+        metrics: Dictionary of all metrics
+        prefix: Metric prefix (e.g., 'e2e_', 'ttft_', 'itl_')
+        category_name: Display name for the category
+    """
+    if not any(k.startswith(prefix) for k in metrics):
+        return
+
+    print(f"\n  {category_name}:")
+    # Define metric order
+    metric_suffixes = ['mean_ms', 'median_ms', 'p50_ms', 'p90_ms', 'p95_ms', 'p99_ms', 'max_ms']
+    metric_labels = ['Mean', 'Median', 'P50', 'P90', 'P95', 'P99', 'Max']
+
+    for suffix, label in zip(metric_suffixes, metric_labels):
+        key = f"{prefix}{suffix}"
+        if key in metrics:
+            print(f"    {label}: {metrics[key]:.2f} ms")
+
+
 def violates_slo(metrics: Optional[Dict], slos: list) -> tuple:
     """
     Check if system violates any SLO.
@@ -69,6 +92,13 @@ def find_max_qps(
     Returns:
         Tuple of (max_qps, metrics) where max_qps is the highest QPS meeting all SLOs
     """
+    # Validate required config fields
+    required_fields = ['model', 'hardware', 'tp', 'batch_size', 'max_scheduled_tokens',
+                       'max_model_len', 'gpu_memory_utilization']
+    missing_fields = [field for field in required_fields if field not in config]
+    if missing_fields:
+        raise ValueError(f"Config missing required fields: {', '.join(missing_fields)}")
+
     # Get num_requests from config, default to 500
     num_requests = config.get('num_requests', 500)
     print(f"\n{'='*60}")
@@ -293,59 +323,10 @@ Available SLO metrics (any BLIS metric):
 
         print(f"\nAll BLIS Metrics:")
 
-        # End-to-End Latency
-        if any(k.startswith('e2e_') for k in metrics):
-            print(f"\n  End-to-End Latency:")
-            if 'e2e_mean_ms' in metrics:
-                print(f"    Mean: {metrics['e2e_mean_ms']:.2f} ms")
-            if 'e2e_median_ms' in metrics:
-                print(f"    Median: {metrics['e2e_median_ms']:.2f} ms")
-            if 'e2e_p50_ms' in metrics:
-                print(f"    P50: {metrics['e2e_p50_ms']:.2f} ms")
-            if 'e2e_p90_ms' in metrics:
-                print(f"    P90: {metrics['e2e_p90_ms']:.2f} ms")
-            if 'e2e_p95_ms' in metrics:
-                print(f"    P95: {metrics['e2e_p95_ms']:.2f} ms")
-            if 'e2e_p99_ms' in metrics:
-                print(f"    P99: {metrics['e2e_p99_ms']:.2f} ms")
-            if 'e2e_max_ms' in metrics:
-                print(f"    Max: {metrics['e2e_max_ms']:.2f} ms")
-
-        # Time to First Token (TTFT)
-        if any(k.startswith('ttft_') for k in metrics):
-            print(f"\n  Time to First Token (TTFT):")
-            if 'ttft_mean_ms' in metrics:
-                print(f"    Mean: {metrics['ttft_mean_ms']:.2f} ms")
-            if 'ttft_median_ms' in metrics:
-                print(f"    Median: {metrics['ttft_median_ms']:.2f} ms")
-            if 'ttft_p50_ms' in metrics:
-                print(f"    P50: {metrics['ttft_p50_ms']:.2f} ms")
-            if 'ttft_p90_ms' in metrics:
-                print(f"    P90: {metrics['ttft_p90_ms']:.2f} ms")
-            if 'ttft_p95_ms' in metrics:
-                print(f"    P95: {metrics['ttft_p95_ms']:.2f} ms")
-            if 'ttft_p99_ms' in metrics:
-                print(f"    P99: {metrics['ttft_p99_ms']:.2f} ms")
-            if 'ttft_max_ms' in metrics:
-                print(f"    Max: {metrics['ttft_max_ms']:.2f} ms")
-
-        # Inter-Token Latency (ITL)
-        if any(k.startswith('itl_') for k in metrics):
-            print(f"\n  Inter-Token Latency (ITL):")
-            if 'itl_mean_ms' in metrics:
-                print(f"    Mean: {metrics['itl_mean_ms']:.2f} ms")
-            if 'itl_median_ms' in metrics:
-                print(f"    Median: {metrics['itl_median_ms']:.2f} ms")
-            if 'itl_p50_ms' in metrics:
-                print(f"    P50: {metrics['itl_p50_ms']:.2f} ms")
-            if 'itl_p90_ms' in metrics:
-                print(f"    P90: {metrics['itl_p90_ms']:.2f} ms")
-            if 'itl_p95_ms' in metrics:
-                print(f"    P95: {metrics['itl_p95_ms']:.2f} ms")
-            if 'itl_p99_ms' in metrics:
-                print(f"    P99: {metrics['itl_p99_ms']:.2f} ms")
-            if 'itl_max_ms' in metrics:
-                print(f"    Max: {metrics['itl_max_ms']:.2f} ms")
+        # Display latency metrics using helper function
+        display_metrics_category(metrics, 'e2e_', 'End-to-End Latency')
+        display_metrics_category(metrics, 'ttft_', 'Time to First Token (TTFT)')
+        display_metrics_category(metrics, 'itl_', 'Inter-Token Latency (ITL)')
 
         # Throughput Metrics
         print(f"\n  Throughput:")
