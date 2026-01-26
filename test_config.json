@@ -7,6 +7,7 @@
   "max_model_len": 8192,
   "gpu_memory_utilization": 0.90,
   "block_size": 16,
+  "vllm_version": "vllm/vllm-openai:v0.8.4",
   "num_requests": 100,
   "prefix_tokens": 129,
   "prompt_tokens": 2871,

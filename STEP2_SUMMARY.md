@@ -102,14 +102,14 @@
 
 1. ✅ **Multiple SLO support**: Can enforce any combination of latency metrics (not just single P90)
 2. ✅ **Discrete binary search**: Uses numpy array with configurable granularity (default 0.01 QPS)
-3. ✅ **Config-based parameters**: Both SLOs and num_requests stored in config file for reproducibility
+3. ✅ **Config-based parameters**: SLOs, num_requests, and vllm_version stored in config file for reproducibility
 4. ✅ **Detailed logging**: Shows status of each SLO metric during search
 5. ✅ **Comprehensive metrics reporting**: Displays all BLIS metrics including mean and percentiles (P90/P95/P99) for E2E, TTFT, and ITL
 6. ✅ **Flexible CLI**: Rich argparse interface with --help documentation
 7. ✅ **Python API**: Can be imported and used programmatically
 8. ✅ **Error handling**: Handles simulation failures and edge cases gracefully
 9. ✅ **Production-ready**: Follows CLAUDE.md specifications and integrates with Step 1 components
-10. ✅ **vLLM version pinning**: All simulations run with vllm/vllm-openai:v0.8.4 for coefficient consistency
+10. ✅ **vLLM version control**: Configurable vLLM version (default: vllm/vllm-openai:v0.8.4) for coefficient consistency
 
 ## Code Structure
 
@@ -188,6 +188,7 @@ for slo in config['slos']:
   "max_model_len": 8192,
   "gpu_memory_utilization": 0.90,
   "block_size": 16,
+  "vllm_version": "vllm/vllm-openai:v0.8.4",
   "num_requests": 500,
   "slos": [
     {"metric": "e2e_p95_ms", "threshold_ms": 1000},

@@ -68,9 +68,10 @@ import json
 with open('test_config.json', 'r') as f:
     config = json.load(f)
 
-# Config must include "slos" and "num_requests" fields:
+# Config must include "slos" field (num_requests and vllm_version are optional):
 # {
-#   "num_requests": 500,
+#   "vllm_version": "vllm/vllm-openai:v0.8.4",  # optional, default: v0.8.4
+#   "num_requests": 500,  # optional, default: 500
 #   "slos": [
 #     {"metric": "e2e_p95_ms", "threshold_ms": 1000},
 #     {"metric": "ttft_p90_ms", "threshold_ms": 500}
@@ -105,6 +106,7 @@ The config JSON file must include `"num_requests"` and `"slos"` fields:
   "max_model_len": 8192,
   "gpu_memory_utilization": 0.90,
   "block_size": 16,
+  "vllm_version": "vllm/vllm-openai:v0.8.4",
   "num_requests": 500,
   "slos": [
     {"metric": "e2e_p95_ms", "threshold_ms": 1000},
@@ -114,7 +116,8 @@ The config JSON file must include `"num_requests"` and `"slos"` fields:
 ```
 
 **Key fields:**
-- `num_requests`: Number of requests per simulation (default: 500 if not specified)
+- `vllm_version`: vLLM Docker image version (optional, default: `"vllm/vllm-openai:v0.8.4"`)
+- `num_requests`: Number of requests per simulation (optional, default: 500)
 - `slos`: List of SLO constraints with metric and threshold_ms
 
 **Available SLO metrics (any BLIS metric can be used):**

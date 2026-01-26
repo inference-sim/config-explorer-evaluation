@@ -30,6 +30,7 @@ def run_blis(
             - max_model_len: Maximum sequence length
             - gpu_memory_utilization: GPU memory utilization fraction
             - block_size: Block size in tokens
+            - vllm_version: vLLM Docker image version (optional, default: 'vllm/vllm-openai:v0.8.4')
             - num_requests: Number of requests to simulate (optional, default: 500)
             - prefix_tokens: Number of prefix tokens (optional, default: 0)
             - prompt_tokens: Mean prompt tokens (optional, for distribution workload)
@@ -87,12 +88,15 @@ def run_blis(
             f"Please create it by combining coefficients.yaml and workloads.yaml"
         )
 
+    # Get vllm_version from config, default to v0.8.4
+    vllm_version = config.get('vllm_version', 'vllm/vllm-openai:v0.8.4')
+
     cmd = [
         str(blis_binary), 'run',
         '--model', config['model'],
         '--hardware', config['hardware'],
         '--tp', str(config['tp']),
-        '--vllm-version', 'vllm/vllm-openai:v0.8.4',
+        '--vllm-version', vllm_version,
         '--rate', str(qps),
         '--max-prompts', str(num_requests),
         '--max-num-running-reqs', str(config['batch_size']),
