@@ -75,8 +75,9 @@ External Dependencies:
 ```bash
 cd inference-sim
 # For config search tool usage:
-# git checkout openevolve
-go build -o simulation_worker main.go
+git checkout openevolve
+go build -o ../simulation_worker main.go
+cd ..
 ```
 
 **Run basic simulation:**
@@ -454,7 +455,7 @@ blocks = total_kv_cache_blocks(
 - **BLIS Runner** (`blis_runner.py`): Wraps BLIS simulation_worker CLI, parses JSON output metrics (TTFT, TPOT, E2E latency percentiles)
 - **Capacity Planner** (`capacity_planner.py`): Uses config_explorer library to calculate `total_kv_blocks` from model architecture, GPU memory (80GB for H100), `max_model_len`, and `gpu_memory_utilization` target
 - **QPS Search** (`qps_search.py`): ✅ **Step 2 Complete** - Discrete binary search algorithm to find max QPS where **multiple SLO constraints** are met (configurable granularity, default: 0.01 QPS precision)
-- **Parallel Search** (`parallel_search.py`): ✅ **Step 3 Complete** - Multiprocessing pool to evaluate N configs concurrently, returns best config by max QPS. Features: grid search (automatic Cartesian product from parameter lists), explicit configs (backward compatible), verbose mode control for clean output, detailed BLIS metrics display for best config, automatic ranking.
+- **Parallel Search** (`parallel_search.py`): ✅ **Step 3 Complete** - Multiprocessing pool to evaluate N configs concurrently, returns best config by max QPS. Features: TP (tensor parallelism) as searchable parameter, grid search (automatic Cartesian product from parameter lists), explicit configs (backward compatible), BLIS_ROOT env var for portable paths, roofline model support, verbose mode control for clean output, detailed BLIS metrics display for best config, automatic ranking.
 - **Vidur Wrapper** (`vidur_wrapper.py`): ⏳ **Step 4** - Generates Vidur YAML configs and invokes built-in config_explorer
 
 **Implementation Status:**
@@ -617,7 +618,8 @@ def calculate_total_kv_blocks(model, max_model_len, gpu_memory_utilization):
 **Prerequisites:**
 - Python 3.11+, Go 1.21+
 - Install config_explorer: `pip install -e ./llm-d-benchmark/config_explorer`
-- Build BLIS: `cd inference-sim && git checkout openevolve && go build -o simulation_worker main.go`
+- Build BLIS: `cd inference-sim && git checkout openevolve && go build -o ../simulation_worker main.go && cd ..`
+- Set environment variable: `export BLIS_ROOT=$(pwd)`
 
 **✅ Step 1 - Test single run:**
 ```bash
@@ -634,13 +636,16 @@ python qps_search.py --config test_config.json
 python qps_search.py --config test_config_small.json
 ```
 
-**✅ Step 3 - Parallel search:**
+**✅ Step 3 - Parallel config search:**
 ```bash
-# Basic parallel config search
+# Grid search (recommended - sweeps TP, batch size, etc.)
+python parallel_search.py --configs examples/configs_grid_search.yaml
+
+# Explicit configs
 python parallel_search.py --configs examples/configs_explicit.yaml
 
 # With custom workers
-python parallel_search.py -c examples/configs_explicit.yaml --num-workers 4
+python parallel_search.py -c examples/configs_grid_search.yaml --num-workers 4
 ```
 
 **⏳ Step 4-5 - Coming soon:**

@@ -13,8 +13,11 @@
 
 **Key Features**:
 - **Parallel evaluation**: Uses `multiprocessing.Pool` to evaluate N configs simultaneously
+- **TP search support**: Tensor parallelism is now a searchable parameter (e.g., tp: [1, 2, 4])
 - **Grid search (NEW!)**: Automatic Cartesian product from parameter lists
 - **Explicit configs**: Backward-compatible manual config list format
+- **Roofline model support**: Optional `model_config_folder_base` and `hardware_config` for performance modeling
+- **BLIS_ROOT environment variable**: Portable path resolution relative to project root
 - **Automatic KV blocks calculation**: Calls `calculate_total_kv_blocks()` for each config
 - **Binary search integration**: Calls `find_max_qps()` from Step 2 for each config
 - **Multi-SLO support**: Inherited from Step 2, supports any combination of SLO metrics
@@ -29,15 +32,18 @@
 ```python
 1. Load YAML config space (auto-detect format):
    Format 1 - Grid Search:
+     tp: [1, 2]
      batch_size: [128, 256, 512]
      max_scheduled_tokens: [2048, 4096]
-     # Generates all combinations automatically
+     # Generates all combinations automatically (Cartesian product)
 
    Format 2 - Explicit:
      configs:
-       - batch_size: 128
+       - tp: 1
+         batch_size: 128
          max_scheduled_tokens: 2048
-       - batch_size: 256
+       - tp: 2
+         batch_size: 256
          max_scheduled_tokens: 4096
 
 2. Generate full configs:
@@ -83,8 +89,11 @@ config-explorer-evaluation/
 # Base configuration
 model: codellama/CodeLlama-34b-Instruct-hf
 hardware: H100
-tp: 1
 num_requests: 100
+
+# Roofline model parameters (paths relative to BLIS_ROOT env var)
+model_config_folder_base: model_configs
+hardware_config: hardware_config.json
 
 # SLO constraints (applied to all configs)
 slos:
@@ -92,13 +101,14 @@ slos:
     threshold_ms: 1000
 
 # Grid search parameters - automatic Cartesian product
+tp: [1, 2]
 batch_size: [128, 256, 512]
 max_scheduled_tokens: [2048, 4096]
 max_model_len: [4096, 8192]
 gpu_memory_utilization: [0.90]
 block_size: [16]
 
-# Generates: 3 × 2 × 2 × 1 × 1 = 12 configs automatically
+# Generates: 2 × 3 × 2 × 2 × 1 × 1 = 24 configs automatically
 ```
 
 **Benefits**:

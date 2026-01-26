@@ -4,9 +4,13 @@
 
 model: codellama/CodeLlama-34b-Instruct-hf
 hardware: H100
-tp: 1
 vllm_version: vllm/vllm-openai:v0.8.4
 num_requests: 100
+
+# Roofline model parameters (paths relative to BLIS_ROOT env var, default: current directory)
+# Note: model_config_folder is automatically constructed as model_config_folder_base/{model_name}
+model_config_folder_base: model_configs
+hardware_config: hardware_config.json
 
 # Workload parameters (used if trace_file not provided)
 prefix_tokens: 129
@@ -28,8 +32,9 @@ slos:
 # Provide lists of values to sweep over
 # All combinations will be generated automatically (Cartesian product)
 
+tp: [1, 2]
 batch_size: [128, 256, 512]
 max_scheduled_tokens: [2048, 4096]
 max_model_len: [4096, 8192]
-gpu_memory_utilization: [0.85, 0.90]
+gpu_memory_utilization: [0.90]
 block_size: [16]
