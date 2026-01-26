@@ -2,6 +2,7 @@
 BLIS Runner - Run BLIS simulations with configuration
 """
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -21,6 +22,10 @@ def run_blis(
     """
     Run BLIS simulation with given configuration and QPS.
 
+    Environment Variables:
+        BLIS_ROOT: Root directory for BLIS paths (default: current directory)
+                   All relative paths are resolved relative to BLIS_ROOT
+
     Args:
         config: Configuration dictionary containing:
             - model: Model identifier
@@ -34,7 +39,9 @@ def run_blis(
             - vllm_version: vLLM Docker image version (optional, default: 'vllm/vllm-openai:v0.8.4')
             - num_requests: Number of requests to simulate (optional, default: 500)
             - model_config_folder_base: Base path for model configs (optional, enables roofline model)
+                                       Can be relative to BLIS_ROOT or absolute
             - hardware_config: Path to hardware config JSON file (optional, enables roofline model)
+                              Can be relative to BLIS_ROOT or absolute
                               Note: model_config_folder is automatically constructed as base/{model_name}
             - prefix_tokens: Number of prefix tokens (optional, default: 0)
             - prompt_tokens: Mean prompt tokens (optional, for distribution workload)
@@ -77,9 +84,12 @@ def run_blis(
 
     total_kv_blocks = int(total_kv_blocks * 0.8)
 
-    # Build command
-    blis_binary = Path("/Users/dipanwitaguhathakurta/Downloads/inference-sim-package/config-explorer-evaluation/simulation_worker")
-    defaults_file = Path("/Users/dipanwitaguhathakurta/Downloads/inference-sim-package/config-explorer-evaluation/inference-sim/defaults.yaml")
+    # Get BLIS root directory from environment or default to current directory
+    blis_root = Path(os.environ.get('BLIS_ROOT', Path.cwd()))
+
+    # Build command - all paths relative to BLIS_ROOT
+    blis_binary = blis_root / "simulation_worker"
+    defaults_file = blis_root / "inference-sim" / "defaults.yaml"
 
     if not blis_binary.exists():
         raise FileNotFoundError(
@@ -119,17 +129,24 @@ def run_blis(
         # Extract model folder name from model identifier
         model_folder_name = config['model'].split("/")[1].lower()
 
-        # Get model config base path from config
+        # Get model config base path from config (relative to BLIS_ROOT if not absolute)
         if 'model_config_folder_base' in config:
             model_config_base = Path(config['model_config_folder_base'])
+            if not model_config_base.is_absolute():
+                model_config_base = blis_root / model_config_base
         else:
-            # Default to relative path if not specified
-            model_config_base = Path(__file__).parent / "model_configs"
+            # Default to model_configs under BLIS_ROOT
+            model_config_base = blis_root / "model_configs"
 
         model_config_folder = model_config_base / model_folder_name
 
+        # Hardware config path (relative to BLIS_ROOT if not absolute)
+        hardware_config_path = Path(config['hardware_config'])
+        if not hardware_config_path.is_absolute():
+            hardware_config_path = blis_root / hardware_config_path
+
         cmd.extend(['--model-config-folder', str(model_config_folder)])
-        cmd.extend(['--hardware-config', config['hardware_config']])
+        cmd.extend(['--hardware-config', str(hardware_config_path)])
 
     # Add trace file or use distribution
     if trace_file:
