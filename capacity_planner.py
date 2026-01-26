@@ -2,12 +2,31 @@
 Capacity Planner - Calculate total KV cache blocks
 Uses config_explorer library from llm-d-benchmark as shown in CLAUDE.md
 """
+import sys
+import os
+from contextlib import contextmanager
+
 from config_explorer.capacity_planner import (
     get_model_info_from_hf,
     get_model_config_from_hf,
     total_kv_cache_blocks as llm_d_total_kv_cache_blocks,
     model_memory_req,
 )
+
+
+@contextmanager
+def suppress_stdout_stderr():
+    """Suppress stdout and stderr output."""
+    with open(os.devnull, 'w') as devnull:
+        old_stdout = sys.stdout
+        old_stderr = sys.stderr
+        sys.stdout = devnull
+        sys.stderr = devnull
+        try:
+            yield
+        finally:
+            sys.stdout = old_stdout
+            sys.stderr = old_stderr
 
 
 # Hardware memory in GB
@@ -30,6 +49,7 @@ def calculate_total_kv_blocks(
     pp: int = 1,
     dp: int = 1,
     hf_token: str = None,
+    verbose: bool = False,
 ) -> int:
     """
     Calculate total KV cache blocks using config_explorer library.
@@ -46,6 +66,7 @@ def calculate_total_kv_blocks(
         pp: Pipeline parallelism degree (default: 1)
         dp: Data parallelism degree (default: 1)
         hf_token: Optional HuggingFace token for gated models
+        verbose: If True, print detailed capacity planning info (default: True)
 
     Returns:
         Number of KV cache blocks
@@ -58,9 +79,15 @@ def calculate_total_kv_blocks(
     gpu_memory = HARDWARE_MEMORY[hardware]
 
     # Get model information from HuggingFace (following CLAUDE.md pattern)
-    print(f"Fetching model info from HuggingFace: {model}")
-    model_info = get_model_info_from_hf(model, hf_token=hf_token)
-    model_config = get_model_config_from_hf(model, hf_token=hf_token)
+    if verbose:
+        print(f"Fetching model info from HuggingFace: {model}")
+        model_info = get_model_info_from_hf(model, hf_token=hf_token)
+        model_config = get_model_config_from_hf(model, hf_token=hf_token)
+    else:
+        # Suppress HuggingFace library output when not verbose
+        with suppress_stdout_stderr():
+            model_info = get_model_info_from_hf(model, hf_token=hf_token)
+            model_config = get_model_config_from_hf(model, hf_token=hf_token)
 
     # Calculate total KV cache blocks (following CLAUDE.md lines 277-288)
     total_blocks = llm_d_total_kv_cache_blocks(
@@ -80,17 +107,18 @@ def calculate_total_kv_blocks(
     model_memory = model_memory_req(model_info, model_config)
 
     # Print capacity planning results
-    print(f"\nCapacity Planning Results:")
-    print(f"  Model: {model}")
-    print(f"  Hardware: {hardware} ({gpu_memory}GB)")
-    print(f"  Tensor Parallelism: {tp}")
-    print(f"  Pipeline Parallelism: {pp}")
-    print(f"  Data Parallelism: {dp}")
-    print(f"  GPU Memory Utilization: {gpu_memory_utilization:.2%}")
-    print(f"  Max Model Length (context): {max_model_len}")
-    print(f"  Block Size: {block_size} tokens")
-    print(f"  Model Memory: {model_memory:.2f} GiB")
-    print(f"  Total KV Blocks: {total_blocks:,}")
+    if verbose:
+        print(f"\nCapacity Planning Results:")
+        print(f"  Model: {model}")
+        print(f"  Hardware: {hardware} ({gpu_memory}GB)")
+        print(f"  Tensor Parallelism: {tp}")
+        print(f"  Pipeline Parallelism: {pp}")
+        print(f"  Data Parallelism: {dp}")
+        print(f"  GPU Memory Utilization: {gpu_memory_utilization:.2%}")
+        print(f"  Max Model Length (context): {max_model_len}")
+        print(f"  Block Size: {block_size} tokens")
+        print(f"  Model Memory: {model_memory:.2f} GiB")
+        print(f"  Total KV Blocks: {total_blocks:,}")
 
     return int(total_blocks)
 
