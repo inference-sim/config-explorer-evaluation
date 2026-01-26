@@ -37,13 +37,21 @@ The simulators predict LLM serving performance (TTFT, TPOT, throughput) without 
 │   │   └── request_generator/         # Workload generators
 │   └── environment.yml                # Conda/Mamba dependencies
 └── config_search/         # Unified capacity planning tool
-    ├── blis_runner.py         # BLIS simulator interface
-    ├── capacity_planner.py    # Wrapper for config_explorer library
-    ├── qps_search.py          # Binary search for max QPS
-    ├── parallel_search.py     # Parallel config evaluation
-    ├── vidur_wrapper.py       # Vidur config generator + runner
-    ├── config_search.py       # Main CLI
+    ├── blis_runner.py         # ✅ Step 1: BLIS simulator interface
+    ├── capacity_planner.py    # ✅ Step 1: Wrapper for config_explorer library
+    ├── qps_search.py          # ✅ Step 2: Binary search for max QPS with multi-SLO support
+    ├── test_blis.py           # ✅ Step 1: Test script for single simulation runs
+    ├── parallel_search.py     # ⏳ Step 3: Parallel config evaluation
+    ├── vidur_wrapper.py       # ⏳ Step 4: Vidur config generator + runner
+    ├── config_search.py       # ⏳ Step 5: Main CLI
     ├── requirements.txt       # Python dependencies
+    ├── test_config.json       # Example config (with SLOs)
+    ├── test_config_small.json # Example small config
+    ├── README_STEP1.md        # ✅ Step 1 documentation
+    ├── README_STEP2.md        # ✅ Step 2 documentation
+    ├── STEP1_SUMMARY.md       # ✅ Step 1 implementation summary
+    ├── STEP2_SUMMARY.md       # ✅ Step 2 implementation summary
+    ├── SETUP.md               # ✅ Quick setup guide for Steps 1 & 2
     └── examples/
         ├── configs_blis.yaml      # BLIS config space examples
         ├── configs_vidur.yaml     # Vidur config space examples
@@ -195,19 +203,38 @@ make lint  # Runs black and isort checks
 
 **Setup:**
 ```bash
-cd config_search
-
 # Install config_explorer library for capacity planning
 git clone https://github.com/llm-d/llm-d-benchmark.git
 pip install -e ./llm-d-benchmark/config_explorer
 
-# Install other dependencies
+# Install other dependencies (if needed)
 pip install -r requirements.txt
 ```
 
 **Note:** The config_explorer library requires Python 3.11+.
 
-**Run BLIS-based search:**
+**✅ Step 1: Test single BLIS simulation run**
+```bash
+# Run capacity planner standalone
+python capacity_planner.py
+
+# Test BLIS integration with single config
+python test_blis.py test_config.json 5.0 50
+```
+
+**✅ Step 2: Binary search for max QPS**
+```bash
+# Basic usage (num_requests and SLOs from config file)
+python qps_search.py --config test_config.json
+
+# With trace file
+python qps_search.py -c test_config.json --trace traces/chat.csv
+
+# Custom search parameters
+python qps_search.py -c test_config.json --qps-granularity 0.01
+```
+
+**⏳ Step 3: Parallel config search (Planned)**
 ```bash
 # Note: Use openevolve branch of inference-sim
 python config_search.py \
@@ -218,7 +245,7 @@ python config_search.py \
   --num-workers 8
 ```
 
-**Run Vidur-based search:**
+**⏳ Step 4: Vidur-based search (Planned)**
 ```bash
 python config_search.py \
   --simulator vidur \
@@ -254,11 +281,12 @@ configs:
 ```
 
 **Key features:**
-- Binary search to find max QPS with 0.1 precision
-- Parallel evaluation of multiple configs
-- Automatic calculation of `total_kv_blocks` using config_explorer library
-- JSON output with best config and all results
+- ✅ **Step 1**: BLIS runner with automatic `total_kv_blocks` calculation via config_explorer library
+- ✅ **Step 2**: Discrete binary search to find max QPS with multi-SLO support (configurable granularity)
+- ⏳ **Step 3**: Parallel evaluation of multiple configs (planned)
+- ⏳ **Step 5**: JSON output with best config and all results (planned)
 - Support for custom workload trace files (CSV format: prompt_tokens, output_tokens)
+- Config-based SLO definitions for reproducibility
 
 **Using config_explorer library for capacity planning:**
 ```python
@@ -419,9 +447,16 @@ blocks = total_kv_cache_blocks(
 **Key Components:**
 - **BLIS Runner** (`blis_runner.py`): Wraps BLIS simulation_worker CLI, parses JSON output metrics (TTFT, TPOT, E2E latency percentiles)
 - **Capacity Planner** (`capacity_planner.py`): Uses config_explorer library to calculate `total_kv_blocks` from model architecture, GPU memory (80GB for H100), `max_model_len`, and `gpu_memory_utilization` target
-- **QPS Search** (`qps_search.py`): Binary search algorithm to find max QPS where tail latency meets SLO (0.1 QPS precision)
-- **Parallel Search** (`parallel_search.py`): Multiprocessing pool to evaluate N configs concurrently, returns best config by max QPS
-- **Vidur Wrapper** (`vidur_wrapper.py`): Generates Vidur YAML configs and invokes built-in config_explorer
+- **QPS Search** (`qps_search.py`): ✅ **Step 2 Complete** - Discrete binary search algorithm to find max QPS where **multiple SLO constraints** are met (configurable granularity, default: 0.01 QPS precision)
+- **Parallel Search** (`parallel_search.py`): ⏳ **Step 3** - Multiprocessing pool to evaluate N configs concurrently, returns best config by max QPS
+- **Vidur Wrapper** (`vidur_wrapper.py`): ⏳ **Step 4** - Generates Vidur YAML configs and invokes built-in config_explorer
+
+**Implementation Status:**
+- ✅ Step 1: BLIS Runner + Capacity Planner (Complete)
+- ✅ Step 2: Binary Search for Max QPS (Complete)
+- ⏳ Step 3: Parallel Config Search (Pending)
+- ⏳ Step 4: Vidur Wrapper (Pending)
+- ⏳ Step 5: Polish + Documentation (Pending)
 
 **Algorithm:**
 1. For each config in search space:
@@ -475,24 +510,54 @@ When modifying Vidur:
 - Dashboard pages: `vidur/config_optimizer/analyzer/dashboard/`
 
 When modifying Config Search Tool:
-- Main entry point: `config_search/config_search.py` (CLI interface)
-- BLIS integration: `config_search/blis_runner.py` (subprocess management, JSON parsing)
-- Capacity calculations: `config_search/capacity_planner.py` (wrapper around config_explorer library)
+- Main entry point: `config_search/config_search.py` (CLI interface) - ⏳ Step 5
+- BLIS integration: `blis_runner.py` (subprocess management, JSON parsing) - ✅ Step 1
+- Capacity calculations: `capacity_planner.py` (wrapper around config_explorer library) - ✅ Step 1
   - Uses `config_explorer.capacity_planner.total_kv_cache_blocks()` for KV block calculations
   - Requires HuggingFace model info and config via `get_model_info_from_hf()` and `get_model_config_from_hf()`
-- Search algorithm: `config_search/qps_search.py` (binary search with SLO constraints)
-- Parallelization: `config_search/parallel_search.py` (multiprocessing pool)
-- Vidur integration: `config_search/vidur_wrapper.py` (YAML generation, result parsing)
-- Config spaces defined in YAML: `config_search/examples/configs_blis.yaml`, `configs_vidur.yaml`
+- Search algorithm: `qps_search.py` (discrete binary search with multi-SLO support) - ✅ Step 2
+  - Supports multiple simultaneous SLO constraints (e.g., P95 E2E + P90 TTFT)
+  - Config-based parameters: `num_requests` and `slos` defined in config file
+  - Uses numpy array for discrete QPS values with configurable granularity
+  - CLI: `python qps_search.py --config <file.json> [OPTIONS]`
+  - Python API: `find_max_qps(config, slos, qps_granularity)`
+- Parallelization: `parallel_search.py` (multiprocessing pool) - ⏳ Step 3
+- Vidur integration: `vidur_wrapper.py` (YAML generation, result parsing) - ⏳ Step 4
+- Config spaces defined in YAML: `examples/configs_blis.yaml`, `configs_vidur.yaml` - ⏳ Step 3
 - Workload traces: CSV format with columns `prompt_tokens`, `output_tokens`
 
 **Development workflow:**
 1. Install config_explorer library: `pip install -e ./llm-d-benchmark/config_explorer`
 2. Use `openevolve` branch of inference-sim submodule
-3. Test single config run with `blis_runner.py` first
-4. Verify binary search convergence with `qps_search.py`
-5. Scale to parallel search with `parallel_search.py`
+3. ✅ Test single config run with `blis_runner.py` (Step 1)
+4. ✅ Verify binary search convergence with `qps_search.py --config test_config.json` (Step 2)
+5. ⏳ Scale to parallel search with `parallel_search.py` (Step 3)
 6. Output format: JSON with `best_config`, `max_qps`, `metrics`, and `all_results`
+
+**Step 2 QPS Search Details:**
+```bash
+# Basic usage
+python qps_search.py --config test_config.json
+
+# Custom search parameters
+python qps_search.py -c test_config.json --qps-granularity 0.01
+
+# With trace file
+python qps_search.py -c test_config.json --trace traces/chat.csv
+```
+
+Config file must include `"num_requests"` and `"slos"` fields:
+```json
+{
+  "model": "...",
+  "num_requests": 500,
+  "slos": [
+    {"metric": "e2e_p95_ms", "threshold_ms": 1000},
+    {"metric": "ttft_p90_ms", "threshold_ms": 500}
+  ],
+  ...
+}
+```
 
 **Example capacity calculation:**
 ```python
@@ -534,4 +599,38 @@ def calculate_total_kv_blocks(model, max_model_len, gpu_memory_utilization):
   - Library fetches model metadata from HuggingFace Hub
   - Supports various attention mechanisms (MHA, GQA, MQA, MLA)
   - Accounts for model quantization and precision in memory calculations
-- Binary search precision: 0.1 QPS, configurable timeout: 300s per simulation run
+- **Step 2 Binary Search**:
+  - Discrete binary search with configurable granularity (default: 0.01 QPS)
+  - Supports multiple simultaneous SLO constraints (e.g., P95 E2E + P90 TTFT)
+  - SLO thresholds defined in config file under `"slos"` key
+  - Configurable timeout: 300s per simulation run (default in blis_runner.py)
+  - Search range: 0.1 to 100.0 QPS (customizable via CLI)
+
+## Quick Start Guide
+
+**Prerequisites:**
+- Python 3.11+, Go 1.21+
+- Install config_explorer: `pip install -e ./llm-d-benchmark/config_explorer`
+- Build BLIS: `cd inference-sim && git checkout openevolve && go build -o simulation_worker main.go`
+
+**✅ Step 1 - Test single run:**
+```bash
+python capacity_planner.py
+python test_blis.py test_config.json 5.0 50
+```
+
+**✅ Step 2 - Binary search:**
+```bash
+# Standard test (num_requests: 500 from config)
+python qps_search.py --config test_config.json
+
+# Quick test (num_requests: 100 from test_config_small.json)
+python qps_search.py --config test_config_small.json
+```
+
+**⏳ Step 3-5 - Coming soon:**
+- Parallel config search
+- Vidur integration
+- Unified CLI
+
+See [SETUP.md](SETUP.md), [README_STEP1.md](README_STEP1.md), and [README_STEP2.md](README_STEP2.md) for detailed instructions.
