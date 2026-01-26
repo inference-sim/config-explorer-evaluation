@@ -29,15 +29,18 @@
 ```python
 1. Load YAML config space (auto-detect format):
    Format 1 - Grid Search:
+     tp: [1, 2]
      batch_size: [128, 256, 512]
      max_scheduled_tokens: [2048, 4096]
-     # Generates all combinations automatically
+     # Generates all combinations automatically (Cartesian product)
 
    Format 2 - Explicit:
      configs:
-       - batch_size: 128
+       - tp: 1
+         batch_size: 128
          max_scheduled_tokens: 2048
-       - batch_size: 256
+       - tp: 2
+         batch_size: 256
          max_scheduled_tokens: 4096
 
 2. Generate full configs:
@@ -83,7 +86,6 @@ config-explorer-evaluation/
 # Base configuration
 model: codellama/CodeLlama-34b-Instruct-hf
 hardware: H100
-tp: 1
 num_requests: 100
 
 # SLO constraints (applied to all configs)
@@ -92,13 +94,14 @@ slos:
     threshold_ms: 1000
 
 # Grid search parameters - automatic Cartesian product
+tp: [1, 2]
 batch_size: [128, 256, 512]
 max_scheduled_tokens: [2048, 4096]
 max_model_len: [4096, 8192]
 gpu_memory_utilization: [0.90]
 block_size: [16]
 
-# Generates: 3 × 2 × 2 × 1 × 1 = 12 configs automatically
+# Generates: 2 × 3 × 2 × 2 × 1 × 1 = 24 configs automatically
 ```
 
 **Benefits**:

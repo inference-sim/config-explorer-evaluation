@@ -25,6 +25,7 @@ slos:
 
 # Config space to search
 # Each config will be evaluated in parallel
+# Note: tp can be overridden per config if needed (defaults to base tp: 1)
 configs:
   - batch_size: 128
     max_scheduled_tokens: 1024
@@ -37,7 +38,8 @@ configs:
     max_model_len: 4096
     gpu_memory_utilization: 0.90
     block_size: 16
-    
+    tp: 2
+
   - batch_size: 256
     max_scheduled_tokens: 4096
     max_model_len: 8192
@@ -49,6 +51,7 @@ configs:
     max_model_len: 8192
     gpu_memory_utilization: 0.95
     block_size: 16
+    tp: 2
 
   - batch_size: 512
     max_scheduled_tokens: 8192

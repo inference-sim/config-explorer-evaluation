@@ -68,7 +68,6 @@ Specify lists of values for each parameter. All combinations are automatically g
 # Base configuration
 model: meta-llama/llama-3.1-8b-instruct
 hardware: H100
-tp: 1
 num_requests: 500
 
 # SLO constraints (applied to all configs)
@@ -77,13 +76,14 @@ slos:
     threshold_ms: 1000
 
 # Grid search parameters - provide lists of values
+tp: [1, 2]
 batch_size: [128, 256, 512]
 max_scheduled_tokens: [2048, 4096]
 max_model_len: [4096, 8192]
 gpu_memory_utilization: [0.85, 0.90, 0.95]
 block_size: [16]
 
-# Generates: 3 × 2 × 2 × 3 × 1 = 36 configs automatically
+# Generates: 2 × 3 × 2 × 2 × 3 × 1 = 72 configs automatically
 ```
 
 **Benefits**:
@@ -135,15 +135,22 @@ configs:
 **Base Config:**
 - `model`: HuggingFace model name
 - `hardware`: GPU type (default: H100)
-- `tp`: Tensor parallelism size (default: 1)
 - `slos`: List of SLO constraints
 
-**Each Config:**
+**Each Config (Explicit Format):**
 - `batch_size`: Max requests in batch
 - `max_scheduled_tokens`: Max tokens per iteration
 - `max_model_len`: Max sequence length
 - `gpu_memory_utilization`: GPU memory target (0.0-1.0)
 - `block_size`: KV cache block size (default: 16)
+
+**Grid Search Parameters (Grid Format):**
+- `tp`: Tensor parallelism size (can be list for sweep, default: [1])
+- `batch_size`: Max requests in batch (list of values)
+- `max_scheduled_tokens`: Max tokens per iteration (list of values)
+- `max_model_len`: Max sequence length (list of values)
+- `gpu_memory_utilization`: GPU memory target (list of values)
+- `block_size`: KV cache block size (list of values, default: [16])
 
 ### Optional Fields
 

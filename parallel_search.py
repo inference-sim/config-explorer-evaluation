@@ -108,10 +108,16 @@ def load_config_space(yaml_path: str) -> Tuple[Dict, List[Dict], list]:
     base_config = {
         'model': data.get('model'),
         'hardware': data.get('hardware', 'H100'),
-        'tp': data.get('tp', 1),
         'vllm_version': data.get('vllm_version', 'vllm/vllm-openai:v0.8.4'),
         'num_requests': data.get('num_requests', 500),
     }
+
+    # TP can be in base_config (fixed for explicit configs) or in grid_params (swept)
+    if 'tp' in data and not isinstance(data.get('tp'), list):
+        base_config['tp'] = data['tp']
+    elif 'tp' not in data:
+        # Default TP value if not specified anywhere
+        base_config['tp'] = 1
 
     # Add optional workload parameters if present
     optional_params = [
@@ -144,6 +150,7 @@ def load_config_space(yaml_path: str) -> Tuple[Dict, List[Dict], list]:
         # Format 2: Grid search - generate Cartesian product
         # Config parameters that can be swept
         grid_params = {
+            'tp': data.get('tp'),
             'batch_size': data.get('batch_size'),
             'max_scheduled_tokens': data.get('max_scheduled_tokens'),
             'max_model_len': data.get('max_model_len'),
@@ -164,8 +171,12 @@ def load_config_space(yaml_path: str) -> Tuple[Dict, List[Dict], list]:
             print(f"Provide either 'configs:' list or parameter lists for grid search")
             sys.exit(1)
 
+        # TP defaults to [1] if not specified
+        if not grid_params['tp']:
+            grid_params['tp'] = [1]
+
         # Generate all combinations
-        param_names = ['batch_size', 'max_scheduled_tokens', 'max_model_len',
+        param_names = ['tp', 'batch_size', 'max_scheduled_tokens', 'max_model_len',
                        'gpu_memory_utilization', 'block_size']
         param_values = [grid_params[name] for name in param_names]
 
