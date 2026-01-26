@@ -33,6 +33,9 @@ def run_blis(
             - block_size: Block size in tokens
             - vllm_version: vLLM Docker image version (optional, default: 'vllm/vllm-openai:v0.8.4')
             - num_requests: Number of requests to simulate (optional, default: 500)
+            - model_config_folder_base: Base path for model configs (optional, enables roofline model)
+            - hardware_config: Path to hardware config JSON file (optional, enables roofline model)
+                              Note: model_config_folder is automatically constructed as base/{model_name}
             - prefix_tokens: Number of prefix tokens (optional, default: 0)
             - prompt_tokens: Mean prompt tokens (optional, for distribution workload)
             - prompt_tokens_stdev: Prompt tokens std dev (optional)
@@ -75,13 +78,13 @@ def run_blis(
     total_kv_blocks = int(total_kv_blocks * 0.8)
 
     # Build command
-    blis_binary = Path(__file__).parent / "inference-sim" / "simulation_worker"
-    defaults_file = Path(__file__).parent / "inference-sim" / "defaults.yaml"
+    blis_binary = Path("/Users/dipanwitaguhathakurta/Downloads/inference-sim-package/config-explorer-evaluation/simulation_worker")
+    defaults_file = Path("/Users/dipanwitaguhathakurta/Downloads/inference-sim-package/config-explorer-evaluation/inference-sim/defaults.yaml")
 
     if not blis_binary.exists():
         raise FileNotFoundError(
             f"BLIS binary not found at {blis_binary}. "
-            f"Please build it first: cd inference-sim && go build -o simulation_worker main.go"
+            f"Please build it first: cd inference-sim && go build -o ../simulation_worker main.go"
         )
 
     if not defaults_file.exists():
@@ -109,6 +112,24 @@ def run_blis(
         '--defaults-filepath', str(defaults_file),
         '--log', 'error',  # Reduce log verbosity
     ]
+
+    # Add model config folder and hardware config for roofline
+    # Model config folder is constructed from model name: model.split("/")[1].lower()
+    if 'hardware_config' in config:
+        # Extract model folder name from model identifier
+        model_folder_name = config['model'].split("/")[1].lower()
+
+        # Get model config base path from config
+        if 'model_config_folder_base' in config:
+            model_config_base = Path(config['model_config_folder_base'])
+        else:
+            # Default to relative path if not specified
+            model_config_base = Path(__file__).parent / "model_configs"
+
+        model_config_folder = model_config_base / model_folder_name
+
+        cmd.extend(['--model-config-folder', str(model_config_folder)])
+        cmd.extend(['--hardware-config', config['hardware_config']])
 
     # Add trace file or use distribution
     if trace_file:

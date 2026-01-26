@@ -7,6 +7,11 @@ hardware: H100
 vllm_version: vllm/vllm-openai:v0.8.4
 num_requests: 100
 
+# Roofline model parameters
+# Note: model_config_folder is automatically constructed as model_config_folder_base/{model_name}
+model_config_folder_base: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/config-explorer-evaluation/model_configs
+hardware_config: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/config-explorer-evaluation/hardware_config.json
+
 # Workload parameters (used if trace_file not provided)
 prefix_tokens: 129
 prompt_tokens: 2871
@@ -31,7 +36,5 @@ tp: [1, 2]
 batch_size: [128, 256, 512]
 max_scheduled_tokens: [2048, 4096]
 max_model_len: [4096, 8192]
-gpu_memory_utilization: [0.85, 0.90]
+gpu_memory_utilization: [0.90]
 block_size: [16]
-
-# Generates: 2 × 3 × 2 × 2 × 2 × 1 = 48 configs automatically

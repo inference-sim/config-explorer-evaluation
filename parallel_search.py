@@ -26,6 +26,7 @@ def evaluate_config(args: Tuple[Dict, list, Optional[str], float, float, float, 
 
     print(f"\n[Config {config_id}] Starting evaluation...")
     print(f"[Config {config_id}] batch_size={config['batch_size']}, "
+          f"tp={config['tp']}, "
           f"max_num_scheduled_tokens={config["max_scheduled_tokens"]}, "
           f"max_model_len={config['max_model_len']}, "
           f"gpu_mem_util={config['gpu_memory_utilization']}, "
@@ -119,8 +120,9 @@ def load_config_space(yaml_path: str) -> Tuple[Dict, List[Dict], list]:
         # Default TP value if not specified anywhere
         base_config['tp'] = 1
 
-    # Add optional workload parameters if present
+    # Add optional workload and roofline parameters if present
     optional_params = [
+        'model_config_folder_base', 'hardware_config',
         'prefix_tokens', 'prompt_tokens', 'prompt_tokens_stdev',
         'prompt_tokens_min', 'prompt_tokens_max',
         'output_tokens', 'output_tokens_stdev',
@@ -164,16 +166,12 @@ def load_config_space(yaml_path: str) -> Tuple[Dict, List[Dict], list]:
                 grid_params[key] = [value]
 
         # Check that required parameters are present
-        required = ['batch_size', 'max_scheduled_tokens', 'max_model_len', 'gpu_memory_utilization']
+        required = ['batch_size', 'tp', 'max_scheduled_tokens', 'max_model_len', 'gpu_memory_utilization']
         missing = [p for p in required if not grid_params.get(p)]
         if missing:
             print(f"Error: Missing required grid search parameters: {', '.join(missing)}")
             print(f"Provide either 'configs:' list or parameter lists for grid search")
             sys.exit(1)
-
-        # TP defaults to [1] if not specified
-        if not grid_params['tp']:
-            grid_params['tp'] = [1]
 
         # Generate all combinations
         param_names = ['tp', 'batch_size', 'max_scheduled_tokens', 'max_model_len',
@@ -241,6 +239,7 @@ def display_results(results: List[Dict], slos: list):
 
         print(f"\n{rank_marker} Config {result['config_id']}:")
         print(f"   Max QPS: {max_qps:.2f}")
+        print(f"   tp: {config['tp']}")
         print(f"   batch_size: {config['batch_size']}")
         print(f"   max_scheduled_tokens: {config['max_scheduled_tokens']}")
         print(f"   max_model_len: {config['max_model_len']}")
@@ -262,6 +261,7 @@ def display_results(results: List[Dict], slos: list):
     print("="*80)
     print(f"\nConfig {best['config_id']} achieves highest QPS: {best['max_qps']:.2f}")
     print(f"\nOptimal Configuration:")
+    print(f"  tp: {best['config']['tp']}")
     print(f"  batch_size: {best['config']['batch_size']}")
     print(f"  max_scheduled_tokens: {best['config']['max_scheduled_tokens']}")
     print(f"  max_model_len: {best['config']['max_model_len']}")
@@ -432,7 +432,6 @@ Format 2 - Explicit Configs (specify each one):
     print(f"\nBase Configuration:")
     print(f"  Model: {base_config['model']}")
     print(f"  Hardware: {base_config['hardware']}")
-    print(f"  TP: {base_config['tp']}")
     print(f"  Num Requests: {base_config['num_requests']}")
 
     print(f"\nSLO Constraints:")
