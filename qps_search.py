@@ -113,6 +113,8 @@ def find_max_qps(
     print(f"{'='*60}\n")
 
     # Create discrete QPS values array
+    # Note: np.arange(0.1, 100.0, 0.01) creates values up to 99.99 (not 100.0)
+    # This is fine - we can adjust qps_max to 100.01 if exactly 100.0 QPS is needed
     qps_values = np.arange(qps_min, qps_max, qps_granularity).tolist()
 
     # Binary search on indices
