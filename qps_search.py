@@ -1,11 +1,21 @@
 """
 QPS Search - Binary search to find maximum QPS meeting SLO threshold
+
+Supports both BLIS (fast and accurate) and Vidur (ML-based) simulators.
+Use --simulator argument to switch between them.
 """
 import argparse
 import sys
+import yaml
 import numpy as np
 from typing import Dict, Tuple, Optional
+
+# Import both simulators
+from vidur_runner import run_vidur
 from blis_runner import run_blis
+
+# Global variable set by command-line argument
+USE_VIDUR = False
 
 
 # Binary search configuration
@@ -42,7 +52,7 @@ def violates_slo(metrics: Optional[Dict], slos: list) -> tuple:
     Check if system violates any SLO.
 
     Args:
-        metrics: Simulation metrics from BLIS
+        metrics: Simulation metrics from simulator
         slos: List of SLO constraints, each with 'metric' and 'threshold_ms'
               e.g., [{"metric": "e2e_p95_ms", "threshold_ms": 1000}]
 
@@ -79,13 +89,13 @@ def find_max_qps(
     Find maximum QPS where all SLO constraints are met using binary search.
 
     Args:
-        config: Configuration dictionary for BLIS, including:
+        config: Configuration dictionary for simulator, including:
                 - num_requests: Number of requests per simulation (optional, default: 500)
-                - Other BLIS config parameters (model, hardware, etc.)
+                - Other config parameters (model, hardware, etc.)
         slos: List of SLO constraints, each with 'metric' and 'threshold_ms'
               e.g., [{"metric": "e2e_p95_ms", "threshold_ms": 1000},
                      {"metric": "ttft_p90_ms", "threshold_ms": 500}]
-        trace_file: Optional path to trace file
+        trace_file: Optional path to trace file (only used for Vidur; BLIS uses distribution mode)
         qps_min: Minimum QPS to search (default: 0.1)
         qps_max: Maximum QPS to search (default: 100.0)
         qps_granularity: QPS step size (default: 0.01)
@@ -137,12 +147,26 @@ def find_max_qps(
             print(f"Iteration {iteration}: Testing QPS = {test_qps:.2f} (index {mid_idx}/{len(qps_values)-1})")
 
         # Run simulation
-        metrics = run_blis(config, test_qps, trace_file, num_requests, verbose=verbose)
+        # BLIS uses distribution mode (no trace file), Vidur uses trace file
+        actual_trace = trace_file if USE_VIDUR else None
+        if USE_VIDUR:
+            metrics = run_vidur(config, test_qps, actual_trace, num_requests, verbose=verbose)
+        else:
+            metrics = run_blis(config, test_qps, actual_trace, num_requests, verbose=verbose)
+
+        # Handle simulation failure (returns None when invalid metrics)
+        if metrics is None:
+            if verbose:
+                simulator_name = "Vidur" if USE_VIDUR else "BLIS"
+                print(f"  ❌ {simulator_name} simulation failed (invalid metrics)")
+                print(f"  Treating as SLO violation, searching lower")
+            high_idx = mid_idx - 1
+            continue
 
         # Check if any SLO violated
         slo_violated, violated_list = violates_slo(metrics, slos)
 
-        if verbose and metrics:
+        if verbose:
             # Print all SLO metrics
             for slo in slos:
                 metric_value = metrics.get(slo['metric'], float('inf'))
@@ -168,23 +192,27 @@ def find_max_qps(
     if max_qps == -1:
         if verbose:
             print(f"⚠️  SLO violated at all tested QPS values up to {qps_max}")
-        max_qps = qps_max
-        # Run at max to get metrics
-        best_metrics = run_blis(config, qps_max, trace_file, num_requests, verbose=verbose) or {}
+        # All simulations failed or violated SLOs
+        simulator_name = "Vidur" if USE_VIDUR else "BLIS"
+        raise RuntimeError(f"All {simulator_name} simulations failed or violated SLOs")
+
+    # Final validation: ensure we have valid metrics
+    if not best_metrics or max_qps <= 0:
+        raise RuntimeError("Binary search completed but no valid configuration found")
 
     if verbose:
         print(f"{'='*60}")
         print(f"Binary Search Complete")
         print(f"{'='*60}")
         print(f"Max QPS meeting all SLOs: {max_qps:.2f} QPS")
-        if best_metrics:
-            print(f"\nSLO Metrics at Max QPS:")
-            for slo in slos:
-                metric_value = best_metrics.get(slo['metric'], 0)
-                status = "✅" if metric_value <= slo['threshold_ms'] else "❌"
-                print(f"  {status} {slo['metric']}: {metric_value:.2f} ms (SLO: {slo['threshold_ms']} ms)")
-            print(f"\nThroughput: {best_metrics.get('responses_per_sec', 0):.2f} QPS")
-            print(f"Total KV Blocks: {best_metrics.get('total_kv_blocks', 0)}")
+        print(f"\nSLO Metrics at Max QPS:")
+        for slo in slos:
+            metric_value = best_metrics.get(slo['metric'], 0)
+            status = "✅" if metric_value <= slo['threshold_ms'] else "❌"
+            print(f"  {status} {slo['metric']}: {metric_value:.2f} ms (SLO: {slo['threshold_ms']} ms)")
+        print(f"\nThroughput: {best_metrics.get('responses_per_sec', 0):.2f} QPS")
+        if 'total_kv_blocks' in best_metrics:
+            print(f"Total KV Blocks: {best_metrics['total_kv_blocks']:,}")
         print(f"{'='*60}\n")
 
     return max_qps, best_metrics
@@ -195,22 +223,29 @@ def main():
     Main entry point with argparse CLI.
     """
     import json
+    import time
 
     parser = argparse.ArgumentParser(
-        description='Binary search to find maximum QPS meeting SLO constraints',
+        description='Binary search to find maximum QPS meeting SLO constraints (BLIS: accurate, Vidur: ML-based)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 Examples:
-  # Basic usage
-  python qps_search.py --config test_config.json
+  # Use BLIS simulator (fast and accurate, recommended)
+  python qps_search.py --config test_config.json --simulator blis
 
-  # With trace file
-  python qps_search.py -c test_config.json --trace traces/chat.csv
+  # Use Vidur simulator (ML-based)
+  python qps_search.py --config test_config.json --simulator vidur
+
+  # With YAML config (uses first config from YAML file)
+  python qps_search.py -c examples/configs_grid_search.yaml --simulator blis
+
+  # With trace file (only used for Vidur)
+  python qps_search.py -c test_config.json --simulator vidur --trace traces/chat.csv
 
   # Custom search parameters
-  python qps_search.py -c test_config.json --qps-max 50.0
+  python qps_search.py -c test_config.json --simulator blis --qps-max 50.0
 
-Config file format:
+Config file format (JSON or YAML):
   {
     "model": "meta-llama/llama-3.1-8b-instruct",
     "num_requests": 500,
@@ -221,10 +256,14 @@ Config file format:
     ...
   }
 
-Available SLO metrics (any BLIS metric):
+Available SLO metrics:
   End-to-End: e2e_mean_ms, e2e_p90_ms, e2e_p95_ms, e2e_p99_ms
   TTFT:       ttft_mean_ms, ttft_p90_ms, ttft_p95_ms, ttft_p99_ms
   ITL:        itl_mean_ms, itl_p90_ms, itl_p95_ms, itl_p99_ms
+
+Simulators (required):
+  blis:  Fast and accurate coefficient-based simulator (recommended)
+  vidur: ML-based simulator with Random Forest latency prediction
         '''
     )
 
@@ -233,15 +272,23 @@ Available SLO metrics (any BLIS metric):
         '-c', '--config',
         required=True,
         type=str,
-        help='Path to config JSON file'
+        help='Path to config file (JSON or YAML). For YAML grid search, uses first value from each parameter list.'
     )
 
     # Optional arguments
     parser.add_argument(
+        '-s', '--simulator',
+        type=str,
+        choices=['blis', 'vidur'],
+        required=True,
+        help='Simulator to use: blis (fast and accurate, recommended) or vidur (ML-based)'
+    )
+
+    parser.add_argument(
         '-t', '--trace',
         type=str,
         default=None,
-        help='Path to trace file (CSV with prompt_tokens, output_tokens)'
+        help='Path to trace file (only used for Vidur; BLIS uses distribution mode)'
     )
 
     # Search parameters
@@ -266,19 +313,56 @@ Available SLO metrics (any BLIS metric):
 
     args = parser.parse_args()
 
-    # Load config
+    # Set global simulator selection
+    global USE_VIDUR
+    USE_VIDUR = (args.simulator == 'vidur')
+
+    # Load config (supports both JSON and YAML)
     try:
         with open(args.config, 'r') as f:
-            config = json.load(f)
+            # Detect file format by extension
+            if args.config.endswith(('.yaml', '.yml')):
+                data = yaml.safe_load(f)
+                # For YAML files, we need to pick a single config
+                # If 'configs' key exists, use the first one, otherwise use the data as-is
+                if 'configs' in data and isinstance(data['configs'], list) and len(data['configs']) > 0:
+                    # YAML with explicit configs list - merge base config with first config
+                    base_config = {k: v for k, v in data.items() if k not in ['configs', 'slos']}
+                    config = {**base_config, **data['configs'][0]}
+                    print(f"Note: YAML file has {len(data['configs'])} configs, using first one for single-config search")
+                elif 'configs' in data:
+                    print(f"Error: YAML 'configs' key exists but is empty or invalid")
+                    sys.exit(1)
+                else:
+                    # YAML with grid search format - need to pick specific values
+                    # Extract base params and use first value from each list
+                    config = {}
+                    grid_params = ['tp', 'batch_size', 'max_scheduled_tokens', 'max_model_len',
+                                   'gpu_memory_utilization', 'block_size']
+                    for key, value in data.items():
+                        if key in grid_params and isinstance(value, list):
+                            config[key] = value[0]  # Use first value
+                        elif key not in ['slos']:
+                            config[key] = value
+                    print(f"Note: YAML file uses grid search format, using first value from each parameter list")
+            else:
+                # JSON format
+                config = json.load(f)
     except FileNotFoundError:
         print(f"Error: Config file not found: {args.config}")
         sys.exit(1)
-    except json.JSONDecodeError as e:
-        print(f"Error: Invalid JSON in config file: {e}")
+    except (json.JSONDecodeError, yaml.YAMLError) as e:
+        print(f"Error: Invalid config file: {e}")
         sys.exit(1)
 
-    # Get SLO configuration from config file
-    slos = config.get('slos', [])
+    # Get SLO configuration from config file or data (for YAML)
+    if args.config.endswith(('.yaml', '.yml')):
+        # For YAML files, slos might be in the original data, not in config
+        with open(args.config, 'r') as f:
+            data = yaml.safe_load(f)
+            slos = data.get('slos', [])
+    else:
+        slos = config.get('slos', [])
 
     if not slos:
         print("Error: No SLOs defined in config file")
@@ -288,6 +372,11 @@ Available SLO metrics (any BLIS metric):
         print('  ]')
         sys.exit(1)
 
+    simulator_name = "Vidur" if USE_VIDUR else "BLIS"
+    print(f"\n{'='*60}")
+    print(f"QPS Search - {simulator_name} Simulator")
+    print(f"{'='*60}")
+
     print(f"\nConfiguration:")
     print(f"  Model: {config['model']}")
     print(f"  Hardware: {config['hardware']}")
@@ -296,6 +385,15 @@ Available SLO metrics (any BLIS metric):
     print(f"  Max Scheduled Tokens: {config['max_scheduled_tokens']}")
     print(f"  Max Model Length: {config['max_model_len']}")
     print(f"  GPU Memory Utilization: {config['gpu_memory_utilization']}")
+
+    # Show roofline model parameters if present
+    if 'hardware_config' in config:
+        print(f"  Hardware Config: {config['hardware_config']}")
+        if 'model_config_folder_base' in config:
+            print(f"  Model Config Base: {config['model_config_folder_base']}")
+        print(f"  Roofline Model: ENABLED")
+    else:
+        print(f"  Roofline Model: DISABLED (using pre-trained coefficients)")
 
     if args.trace:
         print(f"  Trace File: {args.trace}")
@@ -312,29 +410,57 @@ Available SLO metrics (any BLIS metric):
     for slo in slos:
         print(f"  {slo['metric']} < {slo['threshold_ms']} ms")
 
-    # Run binary search
-    max_qps, metrics = find_max_qps(
-        config=config,
-        slos=slos,
-        trace_file=args.trace,
-        qps_min=args.qps_min,
-        qps_max=args.qps_max,
-        qps_granularity=args.qps_granularity
-    )
+    # Run binary search with error handling
+    start_time = time.time()
+    try:
+        max_qps, metrics = find_max_qps(
+            config=config,
+            slos=slos,
+            trace_file=args.trace,
+            qps_min=args.qps_min,
+            qps_max=args.qps_max,
+            qps_granularity=args.qps_granularity
+        )
+    except RuntimeError as e:
+        simulator_name = "Vidur" if USE_VIDUR else "BLIS"
+        print("\n" + "="*60)
+        print(f"❌ {simulator_name} Binary Search Failed")
+        print("="*60)
+        print(f"\nError: {str(e)}")
+        print(f"\nPossible causes:")
+        print(f"  - Configuration parameters may be invalid")
+        print(f"  - SLO thresholds may be too strict")
+        print(f"  - All QPS values violated SLOs or failed simulation")
+        print()
+        sys.exit(1)
+    except Exception as e:
+        simulator_name = "Vidur" if USE_VIDUR else "BLIS"
+        print("\n" + "="*60)
+        print(f"❌ Unexpected Error in {simulator_name} Simulation")
+        print("="*60)
+        print(f"\nError: {str(e)}")
+        import traceback
+        print("\nTraceback:")
+        traceback.print_exc()
+        print()
+        sys.exit(1)
 
     if max_qps > 0:
+        elapsed_time = time.time() - start_time
         print("\n" + "="*60)
         print("✅ Search completed successfully!")
         print("="*60)
         print(f"\nResults:")
         print(f"  Max QPS: {max_qps:.2f}")
+        print(f"  Total Runtime: {elapsed_time:.2f} seconds")
         print(f"\nSLO Metrics at Max QPS:")
         for slo in slos:
             metric_value = metrics.get(slo['metric'], 0)
             status = "✅" if metric_value <= slo['threshold_ms'] else "❌"
             print(f"  {status} {slo['metric']}: {metric_value:.2f} ms (SLO: {slo['threshold_ms']} ms)")
 
-        print(f"\nAll BLIS Metrics:")
+        simulator_name = "Vidur" if USE_VIDUR else "BLIS"
+        print(f"\nAll {simulator_name} Metrics:")
 
         # Display latency metrics using helper function
         display_metrics_category(metrics, 'e2e_', 'End-to-End Latency')
@@ -359,7 +485,8 @@ Available SLO metrics (any BLIS metric):
 
         # Configuration
         print(f"\n  Configuration:")
-        print(f"    Total KV Blocks: {metrics.get('total_kv_blocks', 0)}")
+        if 'total_kv_blocks' in metrics:
+            print(f"    Total KV Blocks: {metrics['total_kv_blocks']:,}")
         print(f"    QPS: {metrics.get('qps', max_qps):.2f}")
 
         print()

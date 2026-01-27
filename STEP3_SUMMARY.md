@@ -16,6 +16,8 @@
 - **TP search support**: Tensor parallelism is now a searchable parameter (e.g., tp: [1, 2, 4])
 - **Grid search (NEW!)**: Automatic Cartesian product from parameter lists
 - **Explicit configs**: Backward-compatible manual config list format
+- **Dual simulator support**: Works with both BLIS (fast and accurate, recommended) and Vidur (ML-based) via `--simulator` flag
+- **Runtime tracking**: Reports total search time and per-config runtime
 - **Roofline model support**: Optional `model_config_folder_base` and `hardware_config` for performance modeling
 - **BLIS_ROOT environment variable**: Portable path resolution relative to project root
 - **Automatic KV blocks calculation**: Calls `calculate_total_kv_blocks()` for each config
@@ -24,9 +26,10 @@
 - **Verbose mode control**: Quiet execution in parallel mode for clean output
 - **Results ranking**: Automatically sorts configs by max QPS (descending)
 - **Best config highlighting**: Shows optimal config with 🏆 marker
-- **Detailed BLIS metrics**: Displays all metrics (E2E, TTFT, ITL, throughput) for best config
-- **JSON output**: Optional save of detailed results for further analysis
+- **Detailed metrics display**: Displays all metrics (E2E, TTFT, ITL, throughput) for best config
+- **JSON output with runtime**: Saves detailed results including per-config and total runtime
 - **Configurable workers**: Default to CPU count, customizable via CLI
+- **NumPy 2.0 compatibility**: Works with both NumPy 1.x and 2.x
 
 **Algorithm**:
 ```python
@@ -154,24 +157,25 @@ configs:
 ### CLI Usage
 
 ```bash
-# Grid search (recommended - generates all combinations)
-python parallel_search.py --configs examples/configs_grid_search.yaml
+# Grid search with BLIS (fast and accurate, recommended)
+python parallel_search.py --configs examples/configs_grid_search.yaml --simulator blis
 
-# Explicit configs (backward compatible)
-python parallel_search.py --configs examples/configs_explicit.yaml
+# Explicit configs with BLIS
+python parallel_search.py --configs examples/configs_explicit.yaml --simulator blis
 
-# With trace file
-python parallel_search.py -c examples/configs_grid_search.yaml --trace traces/chat.csv
+# With Vidur simulator (ML-based)
+python parallel_search.py --configs examples/configs_grid_search.yaml --simulator vidur
 
 # Specify number of workers
-python parallel_search.py -c examples/configs_grid_search.yaml --num-workers 4
+python parallel_search.py -c examples/configs_grid_search.yaml --simulator blis --num-workers 4
 
-# Save results to JSON
-python parallel_search.py -c examples/configs_grid_search.yaml --output results.json
+# Save results to JSON (includes runtime tracking)
+python parallel_search.py -c examples/configs_grid_search.yaml --simulator blis --output results.json
 
 # Custom search parameters
 python parallel_search.py \
   -c examples/configs_grid_search.yaml \
+  --simulator blis \
   --qps-min 1.0 \
   --qps-max 50.0 \
   --qps-granularity 0.1
@@ -312,17 +316,21 @@ Best Config BLIS Metrics:
 
 1. ✅ **Grid search support**: Automatic Cartesian product from parameter lists (95% fewer lines)
 2. ✅ **Parallel evaluation**: Multiple configs evaluated simultaneously using multiprocessing
-3. ✅ **Verbose mode control**: Quiet execution in parallel mode for clean output
-4. ✅ **Automatic KV blocks**: Calls capacity planner for each config
-5. ✅ **Binary search integration**: Leverages Step 2 for finding max QPS
-6. ✅ **Multi-SLO support**: Inherited from Step 2, any combination of metrics
-7. ✅ **Detailed metrics display**: Shows all BLIS metrics (E2E, TTFT, ITL, throughput) for best config
-8. ✅ **Results ranking**: Automatic sorting by max QPS
-9. ✅ **Best config highlighting**: Clear visual indication of optimal config
-10. ✅ **JSON output**: Optional detailed results for further analysis
-11. ✅ **Configurable parallelism**: Default to CPU count, customizable
-12. ✅ **Error handling**: Graceful handling of failed configs
-13. ✅ **Backward compatible**: Supports both grid search and explicit config formats
+3. ✅ **Dual simulator support**: Works with both BLIS (fast and accurate, recommended) and Vidur (ML-based) via `--simulator` flag
+4. ✅ **Runtime tracking**: Reports total search time and per-config runtime in console and JSON output
+5. ✅ **Multiprocessing fix**: Simulator choice correctly propagates to worker processes
+6. ✅ **NumPy 2.0 compatibility**: JSON serialization works with both NumPy 1.x and 2.x
+7. ✅ **Verbose mode control**: Quiet execution in parallel mode for clean output
+8. ✅ **Automatic KV blocks**: Calls capacity planner for each config
+9. ✅ **Binary search integration**: Leverages Step 2 for finding max QPS
+10. ✅ **Multi-SLO support**: Inherited from Step 2, any combination of metrics
+11. ✅ **Detailed metrics display**: Shows all metrics (E2E, TTFT, ITL, throughput) for best config
+12. ✅ **Results ranking**: Automatic sorting by max QPS
+13. ✅ **Best config highlighting**: Clear visual indication of optimal config
+14. ✅ **JSON output**: Optional detailed results with runtime information
+15. ✅ **Configurable parallelism**: Default to CPU count, customizable
+16. ✅ **Error handling**: Graceful handling of failed configs
+17. ✅ **Backward compatible**: Supports both grid search and explicit config formats
 
 ## Performance
 
@@ -442,17 +450,20 @@ With Step 3 complete, ready for:
 Test Step 3 immediately:
 
 ```bash
-# Grid search format (recommended)
-python parallel_search.py --configs examples/configs_grid_search.yaml
+# Grid search format with BLIS (fast and accurate, recommended)
+python parallel_search.py --configs examples/configs_grid_search.yaml --simulator blis
 
-# Explicit configs format (backward compatible)
-python parallel_search.py --configs examples/configs_explicit.yaml
+# Explicit configs format with BLIS (backward compatible)
+python parallel_search.py --configs examples/configs_explicit.yaml --simulator blis
+
+# With Vidur simulator
+python parallel_search.py --configs examples/configs_grid_search.yaml --simulator vidur
 
 # With custom workers
-python parallel_search.py -c examples/configs_grid_search.yaml --num-workers 2
+python parallel_search.py -c examples/configs_grid_search.yaml --simulator blis --num-workers 2
 
-# Save results
-python parallel_search.py -c examples/configs_grid_search.yaml --output results.json
+# Save results (includes runtime tracking)
+python parallel_search.py -c examples/configs_grid_search.yaml --simulator blis --output results.json
 ```
 
 ## Timeline Update

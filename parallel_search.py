@@ -1,28 +1,47 @@
 """
 Parallel Config Search - Evaluate multiple vLLM configs in parallel to find best one
+
+Supports both BLIS (fast and accurate, recommended) and Vidur (ML-based) simulators.
 """
 import argparse
 import json
+import shutil
 import sys
+import time
 import yaml
 from itertools import product
 from multiprocessing import Pool, cpu_count
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-from qps_search import find_max_qps, display_metrics_category
+
+# Import both simulators and supporting modules
+from vidur_runner import run_vidur
+from blis_runner import run_blis
 from capacity_planner import calculate_total_kv_blocks
 
+# Import find_max_qps and display_metrics_category from qps_search
+# (these work for both BLIS and Vidur)
+import qps_search
+from qps_search import display_metrics_category
 
-def evaluate_config(args: Tuple[Dict, list, Optional[str], float, float, float, int]) -> Dict:
+# Global variable set by command-line argument
+USE_VIDUR = False
+
+
+def evaluate_config(args: Tuple[Dict, list, Optional[str], float, float, float, int, bool]) -> Dict:
     """
     Evaluate a single config by finding max QPS meeting SLOs.
 
     Args:
-        args: Tuple containing (config, slos, trace_file, qps_min, qps_max, qps_granularity, config_id)
+        args: Tuple containing (config, slos, trace_file, qps_min, qps_max, qps_granularity, config_id, use_vidur)
+              Note: trace_file only used for Vidur; BLIS uses distribution mode
 
     Returns:
         Dictionary with config, max_qps, metrics, and total_kv_blocks
     """
-    config, slos, trace_file, qps_min, qps_max, qps_granularity, config_id = args
+    config, slos, trace_file, qps_min, qps_max, qps_granularity, config_id, use_vidur = args
+
+    start_time = time.time()
 
     print(f"\n[Config {config_id}] Starting evaluation...")
     print(f"[Config {config_id}] batch_size={config['batch_size']}, "
@@ -33,49 +52,58 @@ def evaluate_config(args: Tuple[Dict, list, Optional[str], float, float, float, 
           f"block_size={config['block_size']} ")
 
     try:
-        # Calculate total KV blocks for this config (quiet mode)
-        total_kv_blocks = calculate_total_kv_blocks(
-            model=config['model'],
-            hardware=config['hardware'],
-            tp=config['tp'],
-            max_model_len=config['max_model_len'],
-            gpu_memory_utilization=config['gpu_memory_utilization'],
-            block_size=config.get('block_size', 16),
-            verbose=False  # Suppress detailed logs in parallel mode
-        )
+        # Calculate total KV blocks for BLIS only (Vidur calculates internally)
+        if not use_vidur:
+            total_kv_blocks = calculate_total_kv_blocks(
+                model=config['model'],
+                hardware=config['hardware'],
+                tp=config['tp'],
+                max_model_len=config['max_model_len'],
+                gpu_memory_utilization=config['gpu_memory_utilization'],
+                block_size=config.get('block_size', 16),
+                verbose=False  # Suppress detailed logs in parallel mode
+            )
 
         # Run binary search to find max QPS (quiet mode)
-        max_qps, metrics = find_max_qps(
+        # BLIS uses distribution mode (no trace file), Vidur uses trace file
+        actual_trace = trace_file if use_vidur else None
+
+        # Use qps_search.find_max_qps for both BLIS and Vidur
+        # Set the global flag to match our simulator choice
+        qps_search.USE_VIDUR = use_vidur
+        max_qps, metrics = qps_search.find_max_qps(
             config=config,
             slos=slos,
-            trace_file=trace_file,
+            trace_file=actual_trace,
             qps_min=qps_min,
             qps_max=qps_max,
             qps_granularity=qps_granularity,
             verbose=False  # Suppress detailed logs in parallel mode
         )
 
-        # Add total_kv_blocks to metrics
-        if metrics:
+        # Add total_kv_blocks to metrics (BLIS only)
+        if not use_vidur and metrics:
             metrics['total_kv_blocks'] = total_kv_blocks
 
-        print(f"\n[Config {config_id}] ✅ Complete - Max QPS: {max_qps:.2f}")
+        elapsed_time = time.time() - start_time
+        print(f"\n[Config {config_id}] ✅ Complete - Max QPS: {max_qps:.2f} (Runtime: {elapsed_time:.2f}s)")
 
         return {
             'config_id': config_id,
             'config': config,
             'max_qps': max_qps,
             'metrics': metrics,
+            'runtime_seconds': elapsed_time,
             'success': True
         }
 
     except Exception as e:
-        print(f"\n[Config {config_id}] ❌ Failed: {str(e)}")
+        elapsed_time = time.time() - start_time
+        print(f"\n[Config {config_id}] ❌ Simulation failed: {str(e)} (Runtime: {elapsed_time:.2f}s)")
         return {
             'config_id': config_id,
             'config': config,
-            'max_qps': -1,
-            'metrics': {},
+            'runtime_seconds': elapsed_time,
             'success': False,
             'error': str(e)
         }
@@ -199,10 +227,13 @@ def load_config_space(yaml_path: str) -> Tuple[Dict, List[Dict], list]:
 
 def display_results(results: List[Dict], slos: list):
     """
-    Display all results and highlight the best config.
+    Display successful results and highlight the best config.
+
+    Note: Only successful configs should be passed to this function.
+    Failed configs are filtered out before calling this function.
 
     Args:
-        results: List of result dictionaries
+        results: List of successful result dictionaries
         slos: List of SLO constraints
     """
     print("\n" + "="*80)
@@ -210,27 +241,15 @@ def display_results(results: List[Dict], slos: list):
     print("="*80)
 
     # Sort results by max_qps (descending)
-    successful_results = [r for r in results if r['success']]
-    failed_results = [r for r in results if not r['success']]
+    results.sort(key=lambda x: x['max_qps'], reverse=True)
 
-    successful_results.sort(key=lambda x: x['max_qps'], reverse=True)
-
-    if not successful_results:
-        print("\n❌ All configs failed!")
-        for result in failed_results:
-            print(f"\nConfig {result['config_id']}: {result.get('error', 'Unknown error')}")
-        return
-
-    # Display all results
-    print(f"\nEvaluated {len(results)} configs:")
-    print(f"  Successful: {len(successful_results)}")
-    print(f"  Failed: {len(failed_results)}")
+    print(f"\nSuccessful configs: {len(results)}")
 
     print("\n" + "-"*80)
-    print("All Configs (sorted by Max QPS):")
+    print("Ranked by Max QPS:")
     print("-"*80)
 
-    for i, result in enumerate(successful_results, 1):
+    for i, result in enumerate(results, 1):
         config = result['config']
         max_qps = result['max_qps']
         metrics = result['metrics']
@@ -245,7 +264,8 @@ def display_results(results: List[Dict], slos: list):
         print(f"   max_model_len: {config['max_model_len']}")
         print(f"   gpu_memory_utilization: {config['gpu_memory_utilization']}")
         print(f"   block_size: {config.get('block_size', 16)}")
-        print(f"   total_kv_blocks: {metrics.get('total_kv_blocks', 0):,}")
+        if 'total_kv_blocks' in metrics:
+            print(f"   total_kv_blocks: {metrics['total_kv_blocks']:,}")
 
         # Show SLO metrics
         print(f"   SLO Metrics:")
@@ -255,7 +275,7 @@ def display_results(results: List[Dict], slos: list):
             print(f"     {status} {slo['metric']}: {metric_value:.2f} ms (SLO: {slo['threshold_ms']} ms)")
 
     # Highlight best config
-    best = successful_results[0]
+    best = results[0]
     print("\n" + "="*80)
     print("BEST CONFIG")
     print("="*80)
@@ -267,7 +287,8 @@ def display_results(results: List[Dict], slos: list):
     print(f"  max_model_len: {best['config']['max_model_len']}")
     print(f"  gpu_memory_utilization: {best['config']['gpu_memory_utilization']}")
     print(f"  block_size: {best['config'].get('block_size', 16)}")
-    print(f"  total_kv_blocks: {best['metrics'].get('total_kv_blocks', 0):,}")
+    if 'total_kv_blocks' in best['metrics']:
+        print(f"  total_kv_blocks: {best['metrics']['total_kv_blocks']:,}")
 
     print(f"\nSLO Compliance:")
     for slo in slos:
@@ -275,11 +296,12 @@ def display_results(results: List[Dict], slos: list):
         status = "✅" if metric_value <= slo['threshold_ms'] else "❌"
         print(f"  {status} {slo['metric']}: {metric_value:.2f} ms (SLO: {slo['threshold_ms']} ms)")
 
-    # Display all BLIS metrics (reusing Step 2 implementation)
-    print(f"\nBest Config BLIS Metrics:")
+    # Display all metrics (from either BLIS or Vidur)
+    simulator_name = "Vidur" if USE_VIDUR else "BLIS"
+    print(f"\nBest Config {simulator_name} Metrics:")
     metrics = best['metrics']
 
-    # Display latency metrics using helper function from qps_search.py
+    # Display latency metrics using helper function
     display_metrics_category(metrics, 'e2e_', 'End-to-End Latency')
     display_metrics_category(metrics, 'ttft_', 'Time to First Token (TTFT)')
     display_metrics_category(metrics, 'itl_', 'Inter-Token Latency (ITL)')
@@ -303,20 +325,155 @@ def display_results(results: List[Dict], slos: list):
     print("\n" + "="*80)
 
 
-def save_results(results: List[Dict], output_file: str):
+def convert_to_json_serializable(obj):
     """
-    Save results to JSON file.
+    Recursively convert numpy types to native Python types for JSON serialization.
 
     Args:
-        results: List of result dictionaries
-        output_file: Path to output JSON file
+        obj: Object to convert (can be dict, list, numpy type, etc.)
+
+    Returns:
+        JSON-serializable version of the object
     """
+    import numpy as np
+
+    if isinstance(obj, dict):
+        return {key: convert_to_json_serializable(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_to_json_serializable(item) for item in obj]
+    elif isinstance(obj, (bool, np.bool_)):
+        # Handle both Python bool and numpy bool (np.bool_ is still valid)
+        return bool(obj)
+    elif isinstance(obj, (int, np.integer)):
+        # Use np.integer base class (works with NumPy 1.x and 2.x)
+        return int(obj)
+    elif isinstance(obj, (float, np.floating)):
+        # Use np.floating base class (works with NumPy 1.x and 2.x)
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    else:
+        return obj
+
+
+def save_results(successful_results: List[Dict], failed_results: List[Dict],
+                 output_file: str, slos: list, base_config: Dict, total_search_time: float):
+    """
+    Save comprehensive results to JSON file, including both successful and failed configs.
+
+    Args:
+        successful_results: List of successful result dictionaries
+        failed_results: List of failed result dictionaries
+        output_file: Path to output JSON file
+        slos: List of SLO constraints
+        base_config: Base configuration used for all configs
+        total_search_time: Total runtime in seconds for the search
+    """
+    import datetime
+
+    # Sort successful results by max_qps
+    successful_results.sort(key=lambda x: x['max_qps'], reverse=True)
+
+    # Build comprehensive output
+    simulator_name = "Vidur" if USE_VIDUR else "BLIS"
+
+    output = {
+        'metadata': {
+            'simulator': simulator_name,
+            'timestamp': datetime.datetime.now().isoformat(),
+            'model': base_config.get('model'),
+            'hardware': base_config.get('hardware'),
+            'num_requests': base_config.get('num_requests'),
+            'slo_constraints': slos
+        },
+        'summary': {
+            'total_configs_evaluated': len(successful_results) + len(failed_results),
+            'successful_configs': len(successful_results),
+            'failed_configs': len(failed_results),
+            'best_config_id': successful_results[0]['config_id'] if successful_results else None,
+            'best_max_qps': float(successful_results[0]['max_qps']) if successful_results else None,
+            'total_search_runtime_seconds': float(total_search_time)
+        },
+        'successful_configs': [
+            {
+                'rank': i + 1,
+                'config_id': result['config_id'],
+                'max_qps': float(result['max_qps']),
+                'runtime_seconds': float(result.get('runtime_seconds', 0)),
+                'configuration': {
+                    'tp': result['config']['tp'],
+                    'batch_size': result['config']['batch_size'],
+                    'max_scheduled_tokens': result['config']['max_scheduled_tokens'],
+                    'max_model_len': result['config']['max_model_len'],
+                    'gpu_memory_utilization': result['config']['gpu_memory_utilization'],
+                    'block_size': result['config'].get('block_size', 16)
+                },
+                'slo_metrics': {
+                    slo['metric']: {
+                        'value_ms': float(result['metrics'].get(slo['metric'], 0)),
+                        'threshold_ms': slo['threshold_ms'],
+                        'passes': bool(result['metrics'].get(slo['metric'], 0) <= slo['threshold_ms'])
+                    }
+                    for slo in slos
+                },
+                'all_metrics': convert_to_json_serializable(result['metrics'])
+            }
+            for i, result in enumerate(successful_results)
+        ],
+        'failed_configs': [
+            {
+                'config_id': result['config_id'],
+                'runtime_seconds': float(result.get('runtime_seconds', 0)),
+                'configuration': {
+                    'tp': result['config']['tp'],
+                    'batch_size': result['config']['batch_size'],
+                    'max_scheduled_tokens': result['config']['max_scheduled_tokens'],
+                    'max_model_len': result['config']['max_model_len'],
+                    'gpu_memory_utilization': result['config']['gpu_memory_utilization'],
+                    'block_size': result['config'].get('block_size', 16)
+                },
+                'error': result.get('error', 'Unknown error')
+            }
+            for result in failed_results
+        ]
+    }
+
     try:
         with open(output_file, 'w') as f:
-            json.dump(results, f, indent=2)
-        print(f"\n✅ Results saved to: {output_file}")
+            json.dump(output, f, indent=2)
+        print(f"\n✅ Comprehensive results saved to: {output_file}")
+        print(f"   - {len(successful_results)} successful configs")
+        print(f"   - {len(failed_results)} failed configs")
     except Exception as e:
         print(f"\n⚠️  Failed to save results: {e}")
+
+
+def cleanup_tmp_directories(verbose: bool = True):
+    """
+    Clean up temporary vidur_sim directories in ./tmp.
+
+    This removes all vidur_sim_* directories created during the experiment.
+    """
+    tmp_dir = Path('./tmp')
+    if not tmp_dir.exists():
+        return
+
+    # Find all vidur_sim directories
+    vidur_dirs = list(tmp_dir.glob('vidur_sim_*'))
+
+    if vidur_dirs:
+        if verbose:
+            print(f"\n🧹 Cleaning up {len(vidur_dirs)} temporary directories...")
+
+        for dir_path in vidur_dirs:
+            try:
+                shutil.rmtree(dir_path)
+            except Exception as e:
+                if verbose:
+                    print(f"  ⚠️  Could not remove {dir_path}: {e}")
+
+        if verbose:
+            print(f"✅ Cleanup complete")
 
 
 def main():
@@ -328,20 +485,23 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 Examples:
-  # Grid search format (recommended)
-  python parallel_search.py --configs examples/configs_grid_search.yaml
+  # Grid search with BLIS (fast and accurate, recommended)
+  python parallel_search.py --configs examples/configs_grid_search.yaml --simulator blis
+
+  # Grid search with Vidur (ML-based)
+  python parallel_search.py --configs examples/configs_grid_search.yaml --simulator vidur
 
   # Explicit configs format
-  python parallel_search.py --configs examples/configs_explicit.yaml
+  python parallel_search.py --configs examples/configs_explicit.yaml --simulator blis
 
-  # With trace file
-  python parallel_search.py -c examples/configs_explicit.yaml --trace traces/chat.csv
+  # With trace file (only used for Vidur)
+  python parallel_search.py -c examples/configs_explicit.yaml --simulator vidur --trace traces/chat.csv
 
   # Specify number of workers
-  python parallel_search.py -c examples/configs_explicit.yaml --num-workers 4
+  python parallel_search.py -c examples/configs_explicit.yaml --simulator blis --num-workers 4
 
   # Save results to JSON
-  python parallel_search.py -c examples/configs_explicit.yaml --output results.json
+  python parallel_search.py -c examples/configs_explicit.yaml --simulator blis --output results.json
 
 YAML Config Formats:
 
@@ -375,10 +535,18 @@ Format 2 - Explicit Configs (specify each one):
 
     # Optional arguments
     parser.add_argument(
+        '-s', '--simulator',
+        type=str,
+        choices=['blis', 'vidur'],
+        required=True,
+        help='Simulator to use: blis (fast and accurate, recommended) or vidur (ML-based)'
+    )
+
+    parser.add_argument(
         '-t', '--trace',
         type=str,
         default=None,
-        help='Path to trace file (CSV with prompt_tokens, output_tokens)'
+        help='Path to trace file (only used for Vidur; BLIS uses distribution mode)'
     )
 
     parser.add_argument(
@@ -419,6 +587,13 @@ Format 2 - Explicit Configs (specify each one):
 
     args = parser.parse_args()
 
+    # Set global simulator selection
+    global USE_VIDUR
+    USE_VIDUR = (args.simulator == 'vidur')
+
+    # Also set for qps_search module
+    qps_search.USE_VIDUR = USE_VIDUR
+
     # Determine number of workers
     num_workers = args.num_workers if args.num_workers else cpu_count()
 
@@ -429,6 +604,8 @@ Format 2 - Explicit Configs (specify each one):
     print(f"\n" + "="*80)
     print("PARALLEL CONFIG SEARCH")
     print("="*80)
+    simulator_name = "Vidur" if USE_VIDUR else "BLIS"
+    print(f"\nSimulator: {simulator_name}")
     print(f"\nBase Configuration:")
     print(f"  Model: {base_config['model']}")
     print(f"  Hardware: {base_config['hardware']}")
@@ -453,31 +630,52 @@ Format 2 - Explicit Configs (specify each one):
 
     # Prepare arguments for each config
     eval_args = [
-        (config, slos, args.trace, args.qps_min, args.qps_max, args.qps_granularity, i+1)
+        (config, slos, args.trace, args.qps_min, args.qps_max, args.qps_granularity, i+1, USE_VIDUR)
         for i, config in enumerate(configs)
     ]
 
     # Run parallel evaluation
+    search_start_time = time.time()
     with Pool(num_workers) as pool:
-        results = pool.map(evaluate_config, eval_args)
+        all_results = pool.map(evaluate_config, eval_args)
+    total_search_time = time.time() - search_start_time
 
-    # Display results
-    display_results(results, slos)
+    # Filter out failed configs immediately
+    successful_results = [r for r in all_results if r['success']]
+    failed_results = [r for r in all_results if not r['success']]
 
-    # Save results to file if requested
-    if args.output:
-        save_results(results, args.output)
+    # Report failures if any
+    if failed_results:
+        print(f"\n⚠️  {len(failed_results)} config(s) failed (excluded from results):")
+        for result in failed_results:
+            print(f"   Config {result['config_id']}: Simulation failed")
 
-    # Return best config
-    successful_results = [r for r in results if r['success']]
-    if successful_results:
-        best = max(successful_results, key=lambda x: x['max_qps'])
-        print(f"\n✅ Search completed successfully!")
-        print(f"   Best config achieves {best['max_qps']:.2f} QPS\n")
-        return 0
-    else:
-        print(f"\n❌ All configs failed!\n")
+    # Check if we have any successful results
+    if not successful_results:
+        print(f"\n❌ All {len(all_results)} configs failed! No results to display.\n")
+        print(f"Total Search Runtime: {total_search_time:.2f} seconds\n")
+        # Still save failed results if output file requested
+        if args.output:
+            save_results([], failed_results, args.output, slos, base_config, total_search_time)
         return 1
+
+    # Display only successful results
+    display_results(successful_results, slos)
+
+    # Save comprehensive results (both successful and failed) to file if requested
+    if args.output:
+        save_results(successful_results, failed_results, args.output, slos, base_config, total_search_time)
+
+    # Clean up temporary directories (Vidur only)
+    if USE_VIDUR:
+        cleanup_tmp_directories(verbose=True)
+
+    # Report best config
+    best = max(successful_results, key=lambda x: x['max_qps'])
+    print(f"\n✅ Search completed successfully!")
+    print(f"   Best config achieves {best['max_qps']:.2f} QPS")
+    print(f"   Total Search Runtime: {total_search_time:.2f} seconds\n")
+    return 0
 
 
 if __name__ == "__main__":

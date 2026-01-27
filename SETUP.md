@@ -144,17 +144,21 @@ python test_blis.py test_config.json 5.0 50
 ### Step 2: Binary Search for Max QPS
 
 ```bash
-# Basic search (num_requests and SLOs from config file)
-python qps_search.py --config test_config.json
+# BLIS simulator (fast and accurate, recommended)
+python qps_search.py --config test_config.json --simulator blis
 
-# Quick test with test_config_small.json (has num_requests: 100)
-python qps_search.py -c test_config_small.json
+# Vidur simulator (ML-based)
+python qps_search.py --config test_config.json --simulator vidur
 
-# With trace file
-python qps_search.py -c test_config.json --trace traces/chat.csv
+# With YAML config
+python qps_search.py -c examples/configs_grid_search.yaml --simulator blis
+
+# With trace file (Vidur only)
+python qps_search.py -c test_config.json --simulator vidur --trace traces/chat.csv
 
 # Custom search parameters
-python qps_search.py -c test_config.json --qps-max 50 --qps-granularity 0.1
+python qps_search.py -c test_config.json --simulator blis \
+  --qps-max 50 --qps-granularity 0.1
 ```
 
 **Note**: Your config file must include `"num_requests"` and `"slos"` fields:
@@ -172,17 +176,20 @@ python qps_search.py -c test_config.json --qps-max 50 --qps-granularity 0.1
 ### Step 3: Parallel Config Search
 
 ```bash
-# Grid search (evaluates all TP, batch size, etc. combinations)
-python parallel_search.py --configs examples/configs_grid_search.yaml
+# BLIS grid search (evaluates all TP, batch size, etc. combinations)
+python parallel_search.py --configs examples/configs_grid_search.yaml --simulator blis
+
+# Vidur simulator
+python parallel_search.py --configs examples/configs_grid_search.yaml --simulator vidur
 
 # Explicit configs
-python parallel_search.py --configs examples/configs_explicit.yaml
+python parallel_search.py --configs examples/configs_explicit.yaml --simulator blis
 
 # With custom workers
-python parallel_search.py -c examples/configs_grid_search.yaml --num-workers 4
+python parallel_search.py -c examples/configs_grid_search.yaml --simulator blis --num-workers 4
 
 # Save results to JSON
-python parallel_search.py -c examples/configs_grid_search.yaml --output results.json
+python parallel_search.py -c examples/configs_grid_search.yaml --simulator blis --output results.json
 ```
 
 **Grid search example** sweeps over:
@@ -193,6 +200,22 @@ python parallel_search.py -c examples/configs_grid_search.yaml --output results.
 - GPU memory utilization: [0.90]
 
 This automatically generates all combinations (24 configs) and finds the best one.
+
+## New Features
+
+### Runtime Tracking
+Both tools now report:
+- Total search runtime
+- Per-config runtime (in parallel_search.py)
+- Displayed in console and saved to JSON output
+
+### Simulator Selection
+All tools require `--simulator` flag:
+- `--simulator blis` - Fast and accurate (recommended)
+- `--simulator vidur` - ML-based Random Forest model
+
+### YAML Support
+qps_search.py now supports YAML files (uses first value from grid search lists).
 
 ## Next Steps
 

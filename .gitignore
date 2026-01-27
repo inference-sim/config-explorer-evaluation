@@ -27,4 +27,7 @@ Thumbs.db
 *.log
 results/
 output/
-results.json
+*_results_*.json
+tmp/
+cache/
+simulation_worker
