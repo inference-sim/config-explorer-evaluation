@@ -7,7 +7,7 @@ hardware: H100
 vllm_version: vllm/vllm-openai:v0.8.4
 num_requests: 100
 
-# Roofline model parameters (paths relative to BLIS_ROOT env var, default: current directory)
+# BLIS Roofline model parameters (paths relative to BLIS_ROOT env var, default: current directory)
 # Note: model_config_folder is automatically constructed as model_config_folder_base/{model_name}
 model_config_folder_base: model_configs
 hardware_config: hardware_config.json

@@ -2,95 +2,81 @@
 
 **Status**: ✅ Completed
 
-## What's Implemented
+## Overview
 
 Binary search algorithm to find the maximum QPS where **multiple SLO constraints** are met, with configurable QPS granularity (default: 0.01 QPS precision).
 
+**Supported Simulators**: Both **BLIS** (fast and accurate, recommended) and **Vidur** (ML-based) with command-line flag.
+
 ## Files
 
-- `qps_search.py` - Binary search implementation for finding max QPS with multi-SLO support
+- `qps_search.py` - Binary search implementation supporting both BLIS and Vidur simulators
 
-## How It Works
+## Simulator Selection
 
-1. **Discrete Binary Search**: Uses numpy array of discrete QPS values (default: 0.01 step size)
-2. **Multi-SLO Checking**: Tests all SLO constraints defined in config file
-3. **Index-based Search**: Binary search on indices for precise convergence
-4. **Result**: Returns max QPS that meets **all** SLO constraints
+Switch between simulators using the required `--simulator` argument:
+
+```bash
+# BLIS (fast and accurate, recommended)
+python qps_search.py --config test_config.json --simulator blis
+
+# Vidur (ML-based)
+python qps_search.py --config test_config.json --simulator vidur
+```
+
+**Same config files work for both simulators** - no changes needed.
 
 ## Key Features
 
 ✅ **Multiple SLO constraints**: Support any combination of latency metrics (e.g., P95 E2E + P90 TTFT)
 ✅ **Flexible granularity**: Configurable QPS step size (default 0.01)
 ✅ **Config-based SLOs**: SLO thresholds defined in config file, not CLI args
+✅ **Dual simulator support**: Works with both BLIS (fast and accurate, recommended) and Vidur (ML-based)
+✅ **Runtime tracking**: Reports total search time for performance analysis
+✅ **YAML support**: Works with both JSON and YAML config files
+✅ **Simulation failure handling**: Gracefully handles invalid metrics and failed simulations
 ✅ **Detailed logging**: Shows status of each SLO metric during search
 ✅ **Robust**: Handles edge cases (all SLOs met, none met)
 
 ## Usage
 
-### Command Line
+### Using BLIS (Recommended)
 
 ```bash
-python qps_search.py --config <config.json> [OPTIONS]
+# BLIS simulator (fast and accurate, recommended)
+python qps_search.py --config test_config.json --simulator blis
+
+# With YAML config
+python qps_search.py -c examples/configs_grid_search.yaml --simulator blis
+
+# With trace file (Vidur only - BLIS uses distribution mode)
+python qps_search.py -c test_config.json --simulator blis --trace traces/chat.csv
+
+# Custom search parameters
+python qps_search.py -c test_config.json --simulator blis --qps-max 50.0 --qps-granularity 0.1
 ```
 
+### Using Vidur
+
+```bash
+# Vidur simulator (ML-based)
+python qps_search.py --config test_config.json --simulator vidur
+
+# With trace file
+python qps_search.py -c test_config.json --simulator vidur --trace traces/chat.csv
+```
+
+### Command-Line Options
+
 **Required:**
-- `--config` or `-c`: Path to configuration JSON file
+- `--config` or `-c`: Path to configuration file (JSON or YAML)
+- `--simulator` or `-s`: Simulator to use (`blis` or `vidur`)
 
 **Optional:**
-- `--trace` or `-t`: Path to trace file (CSV with prompt_tokens, output_tokens)
+- `--trace` or `-t`: Path to trace file (CSV with prompt_tokens, output_tokens; only used for Vidur)
 - `--qps-min`: Minimum QPS to search (default: 0.1)
 - `--qps-max`: Maximum QPS to search (default: 100.0)
 - `--qps-granularity`: QPS step size (default: 0.01)
-
-**Examples:**
-
-```bash
-# Basic search (SLOs defined in config file)
-python qps_search.py --config test_config.json
-
-# With trace file
-python qps_search.py -c test_config.json --trace traces/chat.csv
-
-# Custom search parameters
-python qps_search.py -c test_config.json --qps-max 50.0
-
-# Quick test with coarser granularity
-python qps_search.py -c test_config.json --qps-granularity 0.1
-```
-
-### Python API
-
-```python
-from qps_search import find_max_qps
-import json
-
-# Load config with SLO definitions
-with open('test_config.json', 'r') as f:
-    config = json.load(f)
-
-# Config must include "slos" field (num_requests and vllm_version are optional):
-# {
-#   "vllm_version": "vllm/vllm-openai:v0.8.4",  # optional, default: v0.8.4
-#   "num_requests": 500,  # optional, default: 500
-#   "slos": [
-#     {"metric": "e2e_p95_ms", "threshold_ms": 1000},
-#     {"metric": "ttft_p90_ms", "threshold_ms": 500}
-#   ],
-#   ...
-# }
-
-# Find max QPS meeting all SLOs
-max_qps, metrics = find_max_qps(
-    config=config,
-    slos=config['slos'],
-    qps_granularity=0.01
-)
-
-print(f"Max QPS: {max_qps:.2f}")
-for slo in config['slos']:
-    metric_value = metrics.get(slo['metric'], 0)
-    print(f"{slo['metric']}: {metric_value:.2f} ms (SLO: {slo['threshold_ms']} ms)")
-```
 
 ## Configuration File Format
 
@@ -120,12 +106,12 @@ The config JSON file must include `"num_requests"` and `"slos"` fields:
 - `num_requests`: Number of requests per simulation (optional, default: 500)
 - `slos`: List of SLO constraints with metric and threshold_ms
 
-**Available SLO metrics (any BLIS metric can be used):**
+**Available SLO metrics:**
 - **End-to-End Latency:** `e2e_mean_ms`, `e2e_p90_ms`, `e2e_p95_ms`, `e2e_p99_ms`, `e2e_max_ms`
 - **Time to First Token:** `ttft_mean_ms`, `ttft_p90_ms`, `ttft_p95_ms`, `ttft_p99_ms`, `ttft_max_ms`
 - **Inter-Token Latency:** `itl_mean_ms`, `itl_p90_ms`, `itl_p95_ms`, `itl_p99_ms`, `itl_max_ms`
 
-You can use **any combination** of these metrics in your SLO constraints, including mean, and percentile values.
+You can use **any combination** of these metrics in your SLO constraints.
 
 ## Algorithm
 
@@ -143,8 +129,8 @@ def find_max_qps(config, slos, qps_min=0.1, qps_max=100.0, qps_granularity=0.01)
         mid_idx = (low_idx + high_idx) // 2
         test_qps = qps_values[mid_idx]
 
-        # Run simulation
-        metrics = run_blis(config, test_qps)
+        # Run simulation (BLIS or Vidur)
+        metrics = run_simulator(config, test_qps)
 
         # Check if ANY SLO violated
         slo_violated = any(
@@ -161,25 +147,39 @@ def find_max_qps(config, slos, qps_min=0.1, qps_max=100.0, qps_granularity=0.01)
     return max_qps, best_metrics
 ```
 
+## Python API
+
+```python
+from qps_search import find_max_qps
+import json
+
+# Load config with SLO definitions
+with open('test_config.json', 'r') as f:
+    config = json.load(f)
+
+# Find max QPS meeting all SLOs
+max_qps, metrics = find_max_qps(
+    config=config,
+    slos=config['slos'],
+    qps_granularity=0.01
+)
+
+print(f"Max QPS: {max_qps:.2f}")
+for slo in config['slos']:
+    metric_value = metrics.get(slo['metric'], 0)
+    print(f"{slo['metric']}: {metric_value:.2f} ms (SLO: {slo['threshold_ms']} ms)")
+```
+
 ## Output
 
-The search returns:
-- **max_qps**: Highest QPS meeting all SLOs
-- **metrics**: Comprehensive BLIS simulation metrics at max_qps
-
-**All metrics displayed at the end include:**
-
-- **End-to-End Latency:** Mean, P90, P95, P99, Max (ms)
-- **Time to First Token (TTFT):** Mean, P90, P95, P99, Max (ms)
-- **Inter-Token Latency (ITL):** Mean, P90, P95, P99, Max (ms)
-- **Throughput:** Responses/sec, Tokens/sec
-- **Requests:** Completed
-- **Configuration:** Total KV Blocks, QPS
-
-## Example Output
+### BLIS Output Example
 
 ```bash
-$ python qps_search.py --config test_config.json -n 100
+$ python qps_search.py --config test_config.json --simulator blis
+
+============================================================
+QPS Search - BLIS Simulator
+============================================================
 
 Configuration:
   Model: codellama/CodeLlama-34b-Instruct-hf
@@ -189,6 +189,9 @@ Configuration:
   Max Scheduled Tokens: 4096
   Max Model Length: 8192
   GPU Memory Utilization: 0.9
+  Hardware Config: hardware_config.json
+  Model Config Base: model_configs
+  Roofline Model: ENABLED
   Num Requests: 500
 
 Search Parameters:
@@ -201,12 +204,6 @@ SLO Constraints:
 ============================================================
 Starting Binary Search for Max QPS
 ============================================================
-SLO Constraints:
-  e2e_p95_ms < 1000.0 ms
-Search Range: [0.1, 100.0] QPS
-Granularity: 0.01 QPS
-Requests per simulation: 100
-============================================================
 
 Iteration 1: Testing QPS = 50.00 (index 4990/9999)
   ✅ e2e_p95_ms: 856.32 ms (SLO: 1000.0 ms)
@@ -216,10 +213,6 @@ Iteration 2: Testing QPS = 75.00 (index 7490/9999)
   ❌ e2e_p95_ms: 1247.91 ms (SLO: 1000.0 ms)
   ❌ SLO violated: e2e_p95_ms (1247.91ms > 1000ms)
   Searching lower
-
-Iteration 3: Testing QPS = 62.50 (index 6240/9999)
-  ✅ e2e_p95_ms: 943.27 ms (SLO: 1000.0 ms)
-  ✅ All SLOs met, searching higher
 
 ...
 
@@ -231,14 +224,15 @@ Max QPS meeting all SLOs: 67.34 QPS
 SLO Metrics at Max QPS:
   ✅ e2e_p95_ms: 998.12 ms (SLO: 1000.0 ms)
 
-Throughput: 8.92 QPS
-Total KV Blocks: 140230
+Throughput: 67.34 QPS
+Total KV Blocks: 140,230
 ============================================================
 
 ✅ Search completed successfully!
 
 Results:
   Max QPS: 67.34
+  Total Runtime: 182.47 seconds
 
 SLO Metrics at Max QPS:
   ✅ e2e_p95_ms: 998.12 ms (SLO: 1000.0 ms)
@@ -264,51 +258,64 @@ All BLIS Metrics:
     P99: 26.78 ms
 
   Throughput:
-    Responses/sec: 8.92
+    Responses/sec: 67.34
     Tokens/sec: 1247.83
 
   Requests:
     Completed: 500
+    Failed: 0
+    Total: 500
 
   Configuration:
-    Total KV Blocks: 140230
+    Total KV Blocks: 140,230
     QPS: 67.34
 ```
 
-## Parameters
+### Vidur Output Example
 
-**Config file parameters:**
-- `num_requests`: Number of requests per simulation (default: 500 if not specified, more = slower but more accurate)
-- `slos`: List of SLO constraints with `metric` and `threshold_ms` fields
+```bash
+$ python qps_search.py --config test_config.json
 
-**CLI parameters:**
-- `--config`: Path to configuration JSON file (required)
-- `--trace`: Path to trace file (optional, CSV format)
-- `--qps-min`: Minimum QPS to search (default: 0.1)
-- `--qps-max`: Maximum QPS to search (default: 100.0)
-- `--qps-granularity`: QPS step size (default: 0.01, smaller = more precise but slower)
+============================================================
+QPS Search - Vidur Simulator
+============================================================
 
-## Dependencies
+Configuration:
+  Model: codellama/CodeLlama-34b-Instruct-hf
+  ...
 
-Requires Step 1 components:
-- `blis_runner.py`: For running BLIS simulations
-- `capacity_planner.py`: For KV block calculations
-- BLIS binary: `inference-sim/simulation_worker`
+All Vidur Metrics:
 
-## Next Steps
+  End-to-End Latency:
+    Mean: 878.45 ms
+    P90: 923.12 ms
+    P95: 1012.34 ms
+    P99: 1189.56 ms
+  ...
 
-With Step 2 complete, we can proceed to:
+  Configuration:
+    QPS: 64.12
+```
 
-**Step 3** (1 day): Parallel config search
-- Load config space from YAML
-- Parallel execution with multiprocessing
-- Find best configuration across multiple options
+**Note**: Vidur output excludes `Total KV Blocks` (calculated internally).
+
+## Simulator Comparison
+
+| Aspect | BLIS | Vidur |
+|--------|------|-------|
+| **Speed** | Fast (~5-10s/config) | Slower (~30-60s/config) |
+| **Accuracy** | High (more accurate) | Lower (less accurate) |
+| **Latency Model** | Linear coefficients | Random Forest ML |
+| **Setup** | Simple (pre-trained) | Complex (GPU profiling) |
+| **Recommendation** | Production use | Research/ML experiments |
+
+**Use BLIS for production capacity planning** - it's faster and more accurate.
 
 ## Advanced Usage
 
 ### Multiple SLO Constraints
 
-Define multiple SLOs to ensure both latency and responsiveness. You can use **any BLIS metric**, including mean, median, percentiles, or max:
+Define multiple SLOs to ensure both latency and responsiveness:
 
 ```json
 {
@@ -325,22 +332,10 @@ Define multiple SLOs to ensure both latency and responsiveness. You can use **an
 
 The search will find the max QPS where **all three** SLOs are met.
 
-**Example with mean values:**
-```json
-{
-  "slos": [
-    {"metric": "e2e_mean_ms", "threshold_ms": 800},
-    {"metric": "ttft_mean_ms", "threshold_ms": 100},
-    {"metric": "e2e_p99_ms", "threshold_ms": 1500}
-  ]
-}
-```
-
-This ensures mean latencies stay low while also capping tail latencies.
-
 ### Adjusting Number of Requests
 
 Change `num_requests` in config file for different accuracy/speed trade-offs:
+
 ```json
 {
   "num_requests": 100,   // Faster, less accurate
@@ -369,10 +364,44 @@ If you know the approximate QPS range:
 python qps_search.py -c config.json --qps-min 10 --qps-max 50
 ```
 
-## Timeline
+## Dependencies
 
-- Step 1: ✅ BLIS runner + capacity planner (1 day)
-- Step 2: ✅ Binary search for max QPS with multi-SLO support (1 day)
-- Step 3: ⏳ Parallel config search (1 day)
-- Step 4: ⏳ Vidur wrapper (0.5 day)
-- Step 5: ⏳ Polish + docs (0.5 day)
+Requires Step 1 components:
+- `blis_runner.py`: For running BLIS simulations
+- `capacity_planner.py`: For KV block calculations
+- BLIS binary: `inference-sim/simulation_worker`
+
+For Vidur:
+- `vidur_runner.py`: For running Vidur simulations (Step 4)
+- Vidur environment: See [README_STEP4.md](README_STEP4.md)
+
+## Integration with Parallel Search
+
+`qps_search.py` is used by `parallel_search.py` for binary search of each config:
+
+```python
+# parallel_search.py
+# Both simulators supported via --simulator flag
+from qps_search import find_max_qps, display_metrics_category
+from vidur_runner import run_vidur
+from blis_runner import run_blis
+```
+
+Both tools use the same `--simulator` flag for consistency.
+
+## Next Steps
+
+- **Step 3**: ✅ Parallel config search (completed)
+- **Step 4**: ✅ Vidur wrapper (completed)
+- **Step 5**: ⏳ Polish + docs
+
+## Related Documentation
+
+- [README_STEP1.md](README_STEP1.md) - BLIS runner and capacity planner
+- [README_STEP3.md](README_STEP3.md) - Parallel config search
+- [README_STEP4.md](README_STEP4.md) - Vidur integration guide
+- [STEP2_SUMMARY.md](STEP2_SUMMARY.md) - Implementation details
+
+---
+
+**Summary**: `qps_search.py` finds max QPS meeting multiple SLO constraints using binary search. Supports both BLIS (fast) and Vidur (accurate) with simple flag switch. Same config files work for both simulators.

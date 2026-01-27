@@ -15,6 +15,10 @@
 - **Multiple SLO support**: Can enforce any combination of latency metrics (P90/P95/P99 E2E, TTFT, ITL)
 - **Discrete binary search**: Uses numpy array for precise QPS value selection
 - **Config-based SLOs**: SLO constraints defined in config file, not CLI
+- **Dual simulator support**: Works with both BLIS (fast and accurate, recommended) and Vidur (ML-based) via required `--simulator` flag
+- **Runtime tracking**: Reports total search time for performance analysis
+- **YAML support**: Works with both JSON and YAML config files
+- **Simulation failure handling**: Gracefully handles invalid metrics and failed simulations
 - **Index-based search**: Binary search on indices for exact convergence
 - **Detailed logging**: Shows status of all SLO metrics during each iteration
 - **Error handling**: Gracefully handles simulation failures and edge cases
@@ -103,13 +107,17 @@
 1. ✅ **Multiple SLO support**: Can enforce any combination of latency metrics (not just single P90)
 2. ✅ **Discrete binary search**: Uses numpy array with configurable granularity (default 0.01 QPS)
 3. ✅ **Config-based parameters**: SLOs, num_requests, and vllm_version stored in config file for reproducibility
-4. ✅ **Detailed logging**: Shows status of each SLO metric during search
-5. ✅ **Comprehensive metrics reporting**: Displays all BLIS metrics including mean and percentiles (P90/P95/P99) for E2E, TTFT, and ITL
-6. ✅ **Flexible CLI**: Rich argparse interface with --help documentation
-7. ✅ **Python API**: Can be imported and used programmatically
-8. ✅ **Error handling**: Handles simulation failures and edge cases gracefully
-9. ✅ **Production-ready**: Follows CLAUDE.md specifications and integrates with Step 1 components
-10. ✅ **vLLM version control**: Configurable vLLM version (default: vllm/vllm-openai:v0.8.4) for coefficient consistency
+4. ✅ **Dual simulator support**: Works with both BLIS (fast and accurate, recommended) and Vidur (ML-based) via `--simulator` flag
+5. ✅ **Runtime tracking**: Reports total search time for performance analysis
+6. ✅ **YAML support**: Works with both JSON and YAML config files
+7. ✅ **Simulation failure handling**: Gracefully handles invalid metrics and failed simulations
+8. ✅ **Detailed logging**: Shows status of each SLO metric during search
+9. ✅ **Comprehensive metrics reporting**: Displays all metrics including mean and percentiles (P90/P95/P99) for E2E, TTFT, and ITL
+10. ✅ **Flexible CLI**: Rich argparse interface with --help documentation and required simulator selection
+11. ✅ **Python API**: Can be imported and used programmatically
+12. ✅ **Error handling**: Handles simulation failures and edge cases gracefully
+13. ✅ **Production-ready**: Follows CLAUDE.md specifications and integrates with Step 1 components
+14. ✅ **vLLM version control**: Configurable vLLM version (default: vllm/vllm-openai:v0.8.4) for coefficient consistency
 
 ## Code Structure
 
@@ -129,17 +137,23 @@ config-explorer-evaluation/
 ### CLI Usage
 
 ```bash
-# Basic search (SLOs and num_requests from config file)
-python qps_search.py --config test_config.json
+# Basic search with BLIS (fast and accurate, recommended)
+python qps_search.py --config test_config.json --simulator blis
 
-# With trace file
-python qps_search.py -c test_config.json --trace traces/chat.csv
+# With Vidur (ML-based)
+python qps_search.py --config test_config.json --simulator vidur
+
+# With trace file (only used for Vidur)
+python qps_search.py -c test_config.json --simulator vidur --trace traces/chat.csv
+
+# With YAML config
+python qps_search.py -c examples/configs_grid_search.yaml --simulator blis
 
 # With coarser granularity for faster search
-python qps_search.py -c test_config.json --qps-granularity 0.1
+python qps_search.py -c test_config.json --simulator blis --qps-granularity 0.1
 
 # Custom search range
-python qps_search.py -c test_config.json --qps-min 10 --qps-max 50
+python qps_search.py -c test_config.json --simulator blis --qps-min 10 --qps-max 50
 ```
 
 ### Python API
@@ -274,13 +288,19 @@ Test Step 2 immediately:
 
 ```bash
 # Basic search (num_requests and SLOs from config file)
-python qps_search.py --config test_config.json
+python qps_search.py --config test_config.json --simulator blis
 
 # Use test_config_small.json for faster testing (has num_requests: 100)
-python qps_search.py -c test_config_small.json
+python qps_search.py -c test_config_small.json --simulator blis
+
+# With Vidur simulator
+python qps_search.py -c test_config.json --simulator vidur
+
+# With YAML config
+python qps_search.py -c examples/configs_grid_search.yaml --simulator blis
 
 # With custom granularity
-python qps_search.py -c test_config.json --qps-granularity 0.1
+python qps_search.py -c test_config.json --simulator blis --qps-granularity 0.1
 
 # Test Python API
 python -c "from qps_search import find_max_qps; import json; \

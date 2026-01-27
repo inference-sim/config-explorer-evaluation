@@ -15,7 +15,9 @@ Parallel config search evaluates multiple vLLM configurations concurrently to fi
 - **YAML Config Space**: Define config search space in YAML format
 - **Multi-SLO Support**: Supports multiple simultaneous SLO constraints
 - **Results Ranking**: Automatically ranks configs by max QPS
+- **Runtime Tracking**: Reports total search time and per-config runtime
 - **JSON Output**: Optionally save detailed results to JSON file
+- **Dual Simulator Support**: Works with both BLIS (fast and accurate, recommended) and Vidur (ML-based)
 
 ## Environment Variables
 
@@ -33,29 +35,33 @@ python parallel_search.py --configs examples/configs_grid_search.yaml
 ### Basic Usage
 
 ```bash
-python parallel_search.py --configs examples/configs_explicit.yaml
+# BLIS simulator (fast and accurate, recommended)
+python parallel_search.py --configs examples/configs_explicit.yaml --simulator blis
+
+# Vidur simulator (ML-based)
+python parallel_search.py --configs examples/configs_explicit.yaml --simulator vidur
 ```
 
 ### With Trace File
 
 ```bash
-python parallel_search.py -c examples/configs_explicit.yaml --trace traces/chat.csv
+python parallel_search.py -c examples/configs_explicit.yaml --simulator blis --trace traces/chat.csv
 ```
 
 ### Specify Number of Workers
 
 ```bash
 # Use 4 parallel workers
-python parallel_search.py -c examples/configs_explicit.yaml --num-workers 4
+python parallel_search.py -c examples/configs_explicit.yaml --simulator blis --num-workers 4
 
 # Default: Uses all CPU cores
-python parallel_search.py -c examples/configs_explicit.yaml
+python parallel_search.py -c examples/configs_explicit.yaml --simulator blis
 ```
 
 ### Save Results to JSON
 
 ```bash
-python parallel_search.py -c examples/configs_explicit.yaml --output results.json
+python parallel_search.py -c examples/configs_explicit.yaml --simulator blis --output results.json
 ```
 
 ### Custom Search Parameters
@@ -63,6 +69,7 @@ python parallel_search.py -c examples/configs_explicit.yaml --output results.jso
 ```bash
 python parallel_search.py \
   -c examples/configs_explicit.yaml \
+  --simulator blis \
   --qps-min 1.0 \
   --qps-max 50.0 \
   --qps-granularity 0.1
@@ -202,6 +209,7 @@ All Configs (sorted by Max QPS):
 
 🏆 Config 2:
    Max QPS: 67.34
+   Runtime: 45.32 seconds
    batch_size: 256
    max_scheduled_tokens: 4096
    max_model_len: 8192
@@ -213,6 +221,7 @@ All Configs (sorted by Max QPS):
 
  2. Config 3:
    Max QPS: 65.20
+   Runtime: 42.18 seconds
    batch_size: 256
    max_scheduled_tokens: 4096
    max_model_len: 8192
@@ -235,6 +244,8 @@ Optimal Configuration:
 
 SLO Compliance:
   ✅ e2e_p95_ms: 998.12 ms (SLO: 1000 ms)
+
+Total Search Runtime: 182.47 seconds
 ```
 
 ### JSON Output (Optional)
@@ -242,26 +253,38 @@ SLO Compliance:
 When using `--output results.json`, saves detailed results:
 
 ```json
-[
-  {
-    "config_id": 1,
-    "config": {
-      "model": "...",
-      "batch_size": 256,
-      "max_model_len": 8192,
-      ...
-    },
-    "max_qps": 67.34,
-    "metrics": {
-      "e2e_p95_ms": 998.12,
-      "ttft_p90_ms": 145.67,
-      "total_kv_blocks": 140230,
-      ...
-    },
-    "success": true
+{
+  "metadata": {
+    "simulator": "BLIS",
+    "timestamp": "2026-01-27T10:30:00"
   },
-  ...
-]
+  "summary": {
+    "total_configs_evaluated": 4,
+    "successful_configs": 4,
+    "failed_configs": 0,
+    "best_max_qps": 67.34,
+    "total_search_runtime_seconds": 182.47
+  },
+  "successful_configs": [
+    {
+      "rank": 1,
+      "config_id": 2,
+      "max_qps": 67.34,
+      "runtime_seconds": 45.32,
+      "configuration": {
+        "batch_size": 256,
+        "max_model_len": 8192,
+        ...
+      },
+      "metrics": {
+        "e2e_p95_ms": 998.12,
+        "ttft_p90_ms": 145.67,
+        "total_kv_blocks": 140230,
+        ...
+      }
+    }
+  ]
+}
 ```
 
 ## How It Works
@@ -311,9 +334,10 @@ python parallel_search.py --help
 
 Required:
   -c, --configs PATH     Path to YAML file with config space
+  -s, --simulator STR    Simulator to use: blis (recommended) or vidur
 
 Optional:
-  -t, --trace PATH       Path to trace file (CSV)
+  -t, --trace PATH       Path to trace file (CSV; only used for Vidur)
   -n, --num-workers N    Number of parallel workers (default: CPU count)
   -o, --output PATH      Save results to JSON file
   --qps-min FLOAT        Minimum QPS to search (default: 0.1)

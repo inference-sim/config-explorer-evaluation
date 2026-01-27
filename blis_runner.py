@@ -119,6 +119,7 @@ def run_blis(
         '--max-model-len', str(config['max_model_len']),
         '--total-kv-blocks', str(total_kv_blocks),
         '--block-size-in-tokens', str(config.get('block_size', 16)),
+        '--seed', str(config.get('seed', 42)),  # Set seed for deterministic results
         '--defaults-filepath', str(defaults_file),
         '--log', 'error',  # Reduce log verbosity
     ]
@@ -232,6 +233,21 @@ def run_blis(
         if not metrics:
             print(f"Warning: Could not find metrics in BLIS output", file=sys.stderr)
             print(f"Output: {output[:500]}...", file=sys.stderr)
+            return None
+
+        # Validate metrics - check if we got valid latency data
+        # If all key metrics are 0 or missing, the simulation didn't produce valid results
+        key_metrics = ['e2e_p95_ms', 'ttft_p90_ms', 'itl_mean_ms']
+        valid_data = False
+        for metric_key in key_metrics:
+            if metric_key in metrics:
+                value = metrics[metric_key]
+                if value is not None and value > 0:
+                    valid_data = True
+                    break
+
+        if not valid_data:
+            print(f"Warning: Invalid BLIS metrics (all zeros or missing)", file=sys.stderr)
             return None
 
         # Add calculated total_kv_blocks to results
