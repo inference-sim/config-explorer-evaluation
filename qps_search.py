@@ -245,6 +245,9 @@ Examples:
   # Custom search parameters
   python qps_search.py -c test_config.json --simulator blis --qps-max 50.0
 
+  # Save results to file
+  python qps_search.py -c test_config.json --simulator blis --output results.json
+
 Config file format (JSON or YAML):
   {
     "model": "meta-llama/llama-3.1-8b-instruct",
@@ -309,6 +312,13 @@ Simulators (required):
         type=float,
         default=RPS_GRANULARITY_FOR_BINARY_SEARCH,
         help=f'QPS granularity/step size (default: {RPS_GRANULARITY_FOR_BINARY_SEARCH})'
+    )
+
+    parser.add_argument(
+        '-o', '--output',
+        type=str,
+        default=None,
+        help='Path to save results JSON file (e.g., results.json)'
     )
 
     args = parser.parse_args()
@@ -447,6 +457,59 @@ Simulators (required):
 
     if max_qps > 0:
         elapsed_time = time.time() - start_time
+
+        # Save results to file if --output specified
+        if args.output:
+            # Extract only SLO metrics from the full metrics
+            slo_metrics = {}
+            for slo in slos:
+                metric_name = slo['metric']
+                if metric_name in metrics:
+                    slo_metrics[metric_name] = metrics[metric_name]
+                    slo_metrics[f"{metric_name}_threshold_ms"] = slo['threshold_ms']
+
+            # Create result entry for this simulator
+            simulator_result = {
+                "max_qps": round(max_qps, 2),
+                **slo_metrics,
+                "total_kv_blocks": metrics.get('total_kv_blocks', None),
+                "runtime_seconds": round(elapsed_time, 2),
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+
+            # Create config section with all parameters except the following
+            excluded_fields = {'model_config_folder_base', 'hardware_config', 'slos', 'vllm_version'}
+            config_summary = {
+                k: v for k, v in config.items()
+                if k not in excluded_fields
+            }
+            # Add slos separately to the config summary
+            config_summary['slos'] = slos
+
+            # Load existing data if file exists, otherwise create new structure
+            try:
+                with open(args.output, 'r') as f:
+                    output_data = json.load(f)
+            except (FileNotFoundError, json.JSONDecodeError):
+                output_data = {}
+
+            # Initialize config_file entry if it doesn't exist
+            if args.config not in output_data:
+                output_data[args.config] = {
+                    "config": config_summary,
+                    "results": {}
+                }
+
+            # Add or update simulator result
+            output_data[args.config]["results"][args.simulator] = simulator_result
+
+            try:
+                with open(args.output, 'w') as f:
+                    json.dump(output_data, f, indent=2)
+                print(f"\n✅ Results saved to: {args.output}")
+            except Exception as e:
+                print(f"\n⚠️  Warning: Failed to save results to {args.output}: {e}")
+
         print("\n" + "="*60)
         print("✅ Search completed successfully!")
         print("="*60)
