@@ -31,3 +31,4 @@ output/
 tmp/
 cache/
 simulation_worker
+comparison_plots/
