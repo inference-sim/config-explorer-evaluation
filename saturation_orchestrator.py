@@ -138,7 +138,7 @@ def run_guidellm_benchmark(config, target_qps, output_dir, benchmark_timeout=360
         "--target", "http://localhost:8000/v1",
         "--model", config['model'],
         "--profile", "constant",
-        "--request-type", "completions",
+        "--request-type", "text_completions",
         "--rate", str(target_qps),
         "--max-requests", str(adjusted_max_requests),
         "--warmup", str(warmup_fraction),
