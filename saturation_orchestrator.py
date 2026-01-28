@@ -435,6 +435,118 @@ def wait_for_guidellm_completion(k8s, output_dir, timeout=3600):
     raise TimeoutError("GuideLLM benchmark did not complete in time")
 
 
+def extract_metric_from_guidellm(guidellm_results, metric_name):
+    """
+    Extract metric from GuideLLM benchmarks.json
+
+    Args:
+        guidellm_results: Parsed JSON from benchmarks.json
+        metric_name: Metric name like "e2e_p95_ms", "ttft_p90_ms"
+
+    Returns:
+        float: Metric value in milliseconds, or None if not found
+    """
+    # Metric name mapping
+    mapping = {
+        "e2e_p90_ms": ("request_latency", "p90", True),
+        "e2e_p95_ms": ("request_latency", "p95", True),
+        "e2e_p99_ms": ("request_latency", "p99", True),
+        "ttft_p90_ms": ("time_to_first_token_ms", "p90", False),
+        "ttft_p95_ms": ("time_to_first_token_ms", "p95", False),
+        "ttft_p99_ms": ("time_to_first_token_ms", "p99", False),
+        "itl_p90_ms": ("inter_token_latency_ms", "p90", False),
+        "itl_p95_ms": ("inter_token_latency_ms", "p95", False),
+        "itl_p99_ms": ("inter_token_latency_ms", "p99", False),
+    }
+
+    if metric_name not in mapping:
+        return None
+
+    metric_key, percentile_key, needs_conversion = mapping[metric_name]
+
+    try:
+        benchmarks = guidellm_results.get("benchmarks", [])
+        if not benchmarks:
+            return None
+
+        metrics = benchmarks[0].get("metrics", {})
+        metric_data = metrics.get(metric_key, {})
+        total_data = metric_data.get("total", {})
+        percentiles = total_data.get("percentiles", {})
+        value = percentiles.get(percentile_key)
+
+        if value is None:
+            return None
+
+        # Convert seconds to milliseconds if needed
+        if needs_conversion:
+            value = value * 1000
+
+        return value
+
+    except (KeyError, IndexError, TypeError):
+        return None
+
+
+def generate_validation_report(simulator_name, config_name, simulator_max_qps, slo_constraints, benchmarks_path):
+    """
+    Print validation report showing SLO compliance at simulator's max QPS
+
+    Args:
+        simulator_name: Name of simulator (blis/vidur)
+        config_name: Config identifier
+        simulator_max_qps: QPS predicted by simulator
+        slo_constraints: List of SLO constraints from config
+        benchmarks_path: Path to GuideLLM benchmarks.json
+    """
+    print(f"\n{'='*60}")
+    print("VALIDATION REPORT")
+    print(f"{'='*60}")
+
+    # Load GuideLLM results
+    try:
+        with open(benchmarks_path, 'r') as f:
+            guidellm_results = json.load(f)
+    except Exception as e:
+        print(f"✗ Failed to load benchmarks.json: {e}")
+        return
+
+    # Check SLO compliance
+    print(f"\nSimulator: {simulator_name.upper()}")
+    print(f"Config: {config_name}")
+    print(f"QPS Tested: {simulator_max_qps}")
+    print(f"\nSLO Compliance at Simulator's Max QPS:")
+    print(f"{'-'*60}")
+
+    all_pass = True
+
+    for slo in slo_constraints:
+        metric_name = slo['metric']
+        threshold_ms = slo['threshold_ms']
+
+        # Extract real metric value
+        real_value_ms = extract_metric_from_guidellm(guidellm_results, metric_name)
+
+        if real_value_ms is None:
+            print(f"✗ {metric_name}: Could not extract from results")
+            all_pass = False
+        else:
+            passes = real_value_ms <= threshold_ms
+            status_icon = "✓" if passes else "✗"
+
+            print(f"{status_icon} {metric_name}:")
+            print(f"    Threshold: {threshold_ms:.2f} ms")
+            print(f"    Real vLLM: {real_value_ms:.2f} ms")
+            print(f"    Status: {'PASS' if passes else 'FAIL'}")
+
+            if not passes:
+                all_pass = False
+
+    print(f"{'-'*60}")
+    print(f"\nOverall: {'✓ ALL SLOs MET' if all_pass else '✗ SOME SLOs FAILED'}")
+    print(f"{'='*60}\n")
+
+
 def run_pod_validation(config, max_qps, args):
     """Run validation in existing Kubernetes pod"""
     # Ensure output directory exists
@@ -599,6 +711,9 @@ def main():
     config = data[args.config_name]["config"]
     max_qps = data[args.config_name]["results"][args.simulator]["max_qps"]
 
+    # Extract SLO constraints from config
+    slo_constraints = config.get("slos", [])
+
     # Create output directory
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -610,6 +725,21 @@ def main():
         run_pod_validation(config, max_qps, args)
 
     print(f"✓ Validation complete. Results in {args.output_dir}/")
+
+    # Generate validation report
+    benchmarks_path = os.path.join(args.output_dir, "benchmarks.json")
+    if slo_constraints and os.path.exists(benchmarks_path):
+        generate_validation_report(
+            simulator_name=args.simulator,
+            config_name=args.config_name,
+            simulator_max_qps=max_qps,
+            slo_constraints=slo_constraints,
+            benchmarks_path=benchmarks_path
+        )
+    elif not slo_constraints:
+        print(f"\n⚠️  No SLO constraints found in config")
+    elif not os.path.exists(benchmarks_path):
+        print(f"\n⚠️  benchmarks.json not found")
 
 
 if __name__ == "__main__":
