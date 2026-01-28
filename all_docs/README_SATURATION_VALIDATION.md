@@ -6,7 +6,7 @@ Validates simulation results (BLIS/Vidur) against real vLLM performance using Gu
 
 ```bash
 python saturation_orchestrator.py \
-  --results results/saturation_detection/lowprefix_results.json \
+  --results lowprefix_results.json \
   --config-name test_config_lowprefix.json \
   --simulator blis \
   --output-dir validation_results_blis

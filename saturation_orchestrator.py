@@ -134,7 +134,7 @@ def run_guidellm_benchmark(config, target_qps, output_dir, benchmark_timeout=360
 
     # Build GuideLLM command
     command = [
-        "guidellm",
+        "guidellm", "benchmark",
         "--target", "http://localhost:8000/v1",
         "--model", config['model'],
         "--profile", "constant",
