@@ -4,6 +4,9 @@ import time
 import os
 import sys
 import requests
+import math
+from kubernetes import client, config
+from kubernetes.stream import stream
 
 
 def ensure_guidellm_installed():
@@ -17,8 +20,190 @@ def ensure_guidellm_installed():
         print("✓ GuideLLM installed successfully")
 
 
+class KubernetesManager:
+    def __init__(self, namespace, image, deployment_name=None, pod_name=None):
+        """Initialize Kubernetes manager"""
+        config.load_kube_config()
+        self.namespace = namespace
+        self.image = image
+        self.deployment_name = deployment_name
+        self.pod_name = pod_name
+
+        self.apps_api = client.AppsV1Api()
+        self.core_api = client.CoreV1Api()
+
+    def create_deployment(self):
+        """Create deployment from vllm_validation.yaml template"""
+        deployment_manifest = {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {"name": self.deployment_name},
+            "spec": {
+                "replicas": 1,
+                "selector": {"matchLabels": {"app": self.deployment_name}},
+                "template": {
+                    "metadata": {"labels": {"app": self.deployment_name}},
+                    "spec": {
+                        "terminationGracePeriodSeconds": 20,
+                        "restartPolicy": "Always",
+                        "affinity": {
+                            "nodeAffinity": {
+                                "requiredDuringSchedulingIgnoredDuringExecution": {
+                                    "nodeSelectorTerms": [{
+                                        "matchExpressions": [
+                                            {
+                                                "key": "nvidia.com/gpu.product",
+                                                "operator": "In",
+                                                "values": ["NVIDIA-H100-80GB-HBM3"]
+                                            },
+                                            {
+                                                "key": "nvidia.com/gpu.memory",
+                                                "operator": "Gt",
+                                                "values": ["50000"]
+                                            }
+                                        ]
+                                    }]
+                                }
+                            }
+                        },
+                        "containers": [{
+                            "name": "vllm",
+                            "image": self.image,
+                            "imagePullPolicy": "IfNotPresent",
+                            "resources": {"limits": {"nvidia.com/gpu": 1}},
+                            "command": ["/bin/sh", "-lc"],
+                            "args": ["sleep infinity"],
+                            "ports": [{"containerPort": 8000, "name": "http"}],
+                            "env": [
+                                {"name": "NVIDIA_VISIBLE_DEVICES", "value": "all"},
+                                {"name": "NVIDIA_DRIVER_CAPABILITIES", "value": "compute,utility"}
+                            ]
+                        }]
+                    }
+                }
+            }
+        }
+
+        self.apps_api.create_namespaced_deployment(
+            namespace=self.namespace,
+            body=deployment_manifest
+        )
+        print(f"✓ Deployment {self.deployment_name} created")
+
+    def find_pod_from_deployment(self):
+        """Find pod from deployment name"""
+        pods = self.core_api.list_namespaced_pod(
+            namespace=self.namespace,
+            label_selector=f"app={self.deployment_name}"
+        )
+
+        if not pods.items:
+            raise RuntimeError(f"No pod found for deployment {self.deployment_name}")
+
+        pod = pods.items[0]
+        self.pod_name = pod.metadata.name
+        print(f"✓ Found pod {self.pod_name} for deployment {self.deployment_name}")
+
+    def wait_for_pod_ready(self, timeout=300):
+        """Poll until pod status is Running"""
+        start = time.time()
+
+        while time.time() - start < timeout:
+            pods = self.core_api.list_namespaced_pod(
+                namespace=self.namespace,
+                label_selector=f"app={self.deployment_name}"
+            )
+
+            if pods.items:
+                pod = pods.items[0]
+                self.pod_name = pod.metadata.name
+
+                if pod.status.phase == "Running":
+                    return
+
+            time.sleep(2)
+
+        raise TimeoutError(f"Pod failed to become ready within {timeout}s")
+
+    def exec_command(self, cmd, background=False):
+        """Execute command in pod"""
+        if background:
+            cmd = f"nohup {cmd} > /dev/null 2>&1 &"
+
+        exec_command = ["/bin/sh", "-c", cmd]
+
+        resp = stream(
+            self.core_api.connect_get_namespaced_pod_exec,
+            self.pod_name,
+            self.namespace,
+            command=exec_command,
+            stderr=True,
+            stdin=False,
+            stdout=True,
+            tty=False,
+            _preload_content=True
+        )
+
+        return resp
+
+    def copy_to_pod(self, local_path, pod_path):
+        """Copy local file to pod"""
+        with open(local_path, 'rb') as f:
+            file_data = f.read()
+
+        # Create parent directory in pod
+        pod_dir = os.path.dirname(pod_path)
+        self.exec_command(f"mkdir -p {pod_dir}")
+
+        # Write file content
+        exec_command = ["sh", "-c", f"cat > {pod_path}"]
+        resp = stream(
+            self.core_api.connect_get_namespaced_pod_exec,
+            self.pod_name,
+            self.namespace,
+            command=exec_command,
+            stderr=True,
+            stdin=True,
+            stdout=True,
+            tty=False,
+            _preload_content=False
+        )
+
+        resp.write_stdin(file_data)
+        resp.close()
+
+    def read_file_from_pod(self, pod_path):
+        """Read file content from pod using base64 to avoid truncation"""
+        # Use base64 to safely transfer any file content
+        result = self.exec_command(f"base64 -w 0 {pod_path}")
+
+        # Decode base64 to get original content
+        import base64
+        try:
+            decoded = base64.b64decode(result.strip())
+            # Try to decode as UTF-8 text
+            return decoded.decode('utf-8')
+        except:
+            # If it fails, return as bytes
+            return decoded
+
+    def list_files_from_pod(self, pod_dir):
+        """List files in directory in pod"""
+        result = self.exec_command(f"find {pod_dir} -type f")
+        return result.strip().split('\n') if result.strip() else []
+
+    def delete_deployment(self):
+        """Delete deployment and pod"""
+        self.apps_api.delete_namespaced_deployment(
+            name=self.deployment_name,
+            namespace=self.namespace,
+            body=client.V1DeleteOptions()
+        )
+        print(f"✓ Deployment {self.deployment_name} deleted")
+
+
 class VLLMServerManager:
-    def __init__(self, config, port=8000, log_file=None, startup_timeout=300):
+    def __init__(self, config, port=8000, log_file=None, startup_timeout=600):
         """Build vLLM command from config"""
         self.port = port
         self.process = None
@@ -130,7 +315,7 @@ def run_guidellm_benchmark(config, target_qps, output_dir, benchmark_timeout=360
     # If warmup is 0.1, then actual benchmark requests = max_requests * 0.9
     # So to get num_requests benchmark requests, we need max_requests = num_requests / 0.9
     warmup_fraction = 0.1
-    adjusted_max_requests = int(config['num_requests'] / (1 - warmup_fraction))
+    adjusted_max_requests = math.ceil(config['num_requests'] / (1 - warmup_fraction))
 
     # Build GuideLLM command
     command = [
@@ -156,6 +341,224 @@ def run_guidellm_benchmark(config, target_qps, output_dir, benchmark_timeout=360
         raise TimeoutError(f"GuideLLM benchmark exceeded timeout of {benchmark_timeout}s")
 
 
+def build_vllm_command_string(config, port=8000):
+    """Build vLLM command as string for exec"""
+    cmd = f"vllm serve {config['model']}"
+    cmd += f" --max-num-seqs {config['batch_size']}"
+    cmd += f" --max-num-batched-tokens {config['max_scheduled_tokens']}"
+    cmd += f" --max-model-len {config['max_model_len']}"
+    cmd += f" --gpu-memory-utilization {config['gpu_memory_utilization']}"
+    cmd += f" --block-size {config['block_size']}"
+    cmd += f" --tensor-parallel-size {config['tp']}"
+    cmd += f" --port {port}"
+    return cmd
+
+
+def build_guidellm_command_string(config, max_qps, output_dir):
+    """Build GuideLLM command as string for exec"""
+    data = {
+        "prompt_tokens": config['prompt_tokens'],
+        "output_tokens": config['output_tokens'],
+        "prefix_tokens": config['prefix_tokens'],
+        "prompt_tokens_min": config['prompt_tokens_min'],
+        "prompt_tokens_max": config['prompt_tokens_max'],
+        "prompt_tokens_stdev": config['prompt_tokens_stdev'],
+        "output_tokens_min": config['output_tokens_min'],
+        "output_tokens_max": config['output_tokens_max'],
+        "output_tokens_stdev": config['output_tokens_stdev']
+    }
+
+    data_json = json.dumps(data).replace('"', '\\"')
+
+    warmup_fraction = 0.1
+    adjusted_max_requests = int(math.ceil(config['num_requests'] / (1 - warmup_fraction)))
+
+    cmd = "guidellm benchmark"
+    cmd += " --target http://localhost:8000/v1"
+    cmd += f" --model {config['model']}"
+    cmd += " --profile constant"
+    cmd += " --request-type text_completions"
+    cmd += f" --rate {max_qps}"
+    cmd += f" --max-requests {adjusted_max_requests}"
+    cmd += f" --warmup {warmup_fraction}"
+    cmd += f' --data "{data_json}"'
+    cmd += f" --output-dir {output_dir}"
+    return cmd
+
+
+def wait_for_vllm_in_pod(k8s, timeout=300):
+    """Poll health endpoints in pod until ready"""
+    start = time.time()
+    health_ok = False
+    models_ok = False
+
+    while time.time() - start < timeout:
+        if not health_ok:
+            try:
+                result = k8s.exec_command("curl -s -w '%{http_code}' localhost:8000/health")
+                # Check for 200 HTTP status code
+                if "200" in result:
+                    health_ok = True
+                    print("✓ Health endpoint ready")
+            except Exception as e:
+                pass  # Retry on error
+            time.sleep(2)
+            continue
+
+        if not models_ok:
+            try:
+                result = k8s.exec_command("curl -s -w '%{http_code}' localhost:8000/v1/models")
+                # Check for 200 HTTP status code and some content
+                if "200" in result and len(result) > 10:
+                    models_ok = True
+                    print("✓ Models endpoint ready")
+                    return
+            except Exception as e:
+                pass  # Retry on error
+            time.sleep(2)
+
+    raise TimeoutError("vLLM failed to start in pod")
+
+
+def wait_for_guidellm_completion(k8s, output_dir, timeout=3600):
+    """Poll output directory for JSON/CSV files indicating completion"""
+    start = time.time()
+
+    while time.time() - start < timeout:
+        result = k8s.exec_command(f"ls {output_dir}/*.json {output_dir}/*.csv 2>/dev/null")
+
+        if result and (".json" in result or ".csv" in result):
+            return
+
+        time.sleep(10)
+
+    raise TimeoutError("GuideLLM benchmark did not complete in time")
+
+
+def run_pod_validation(config, max_qps, args):
+    """Run validation in existing Kubernetes pod"""
+    # Ensure output directory exists
+    os.makedirs(args.output_dir, exist_ok=True)
+
+    # Connect to existing deployment
+    k8s = KubernetesManager(args.namespace, args.image, deployment_name=args.deployment_name)
+    k8s.find_pod_from_deployment()
+
+    # 1. Setup environment
+    k8s.exec_command("apt-get update && apt-get install -y python3-pip curl")
+    k8s.exec_command("pip install guidellm")
+    print("✓ Environment setup complete")
+
+    # 2. Start vLLM server in background
+    vllm_cmd = build_vllm_command_string(config, port=8000)
+    k8s.exec_command(f"nohup {vllm_cmd} > /tmp/vllm.log 2>&1 &", background=True)
+    time.sleep(10)
+
+    # 3. Wait for vLLM ready
+    wait_for_vllm_in_pod(k8s, timeout=args.startup_timeout)
+    print("✓ vLLM server ready")
+
+    # 4. Create output directory and run GuideLLM in background
+    k8s.exec_command("mkdir -p /output/validation_results")
+    guidellm_cmd = build_guidellm_command_string(config, max_qps, "/output/validation_results")
+    k8s.exec_command(f"nohup {guidellm_cmd} > /tmp/guidellm.log 2>&1 &", background=True)
+    print("Running GuideLLM benchmark...")
+
+    # 5. Wait for GuideLLM completion
+    wait_for_guidellm_completion(k8s, "/output/validation_results", timeout=args.benchmark_timeout)
+    print("✓ GuideLLM benchmark completed")
+
+    # 6. Copy logs
+    vllm_log = k8s.read_file_from_pod("/tmp/vllm.log")
+    with open(os.path.join(args.output_dir, "vllm.log"), "w") as f:
+        f.write(vllm_log)
+
+    guidellm_log = k8s.read_file_from_pod("/tmp/guidellm.log")
+    with open(os.path.join(args.output_dir, "guidellm.log"), "w") as f:
+        f.write(guidellm_log)
+
+    # 7. Copy GuideLLM results
+    result_files = k8s.list_files_from_pod("/output/validation_results")
+    for pod_file in result_files:
+        if pod_file:
+            file_content = k8s.read_file_from_pod(pod_file)
+            local_filename = os.path.basename(pod_file)
+            local_path = os.path.join(args.output_dir, local_filename)
+
+            # Write as text or binary depending on what we got back
+            if isinstance(file_content, bytes):
+                with open(local_path, "wb") as f:
+                    f.write(file_content)
+            else:
+                with open(local_path, "w") as f:
+                    f.write(file_content)
+
+    print(f"✓ Results saved to {args.output_dir}/")
+
+
+def run_k8s_validation(config, max_qps, args):
+    """Run validation in Kubernetes pod (creates new deployment)"""
+    # Ensure output directory exists
+    os.makedirs(args.output_dir, exist_ok=True)
+
+    deployment_name = f"vllm-validation-{int(time.time())}"
+
+    # 1. Create deployment
+    k8s = KubernetesManager(args.namespace, args.image, deployment_name)
+    k8s.create_deployment()
+    k8s.wait_for_pod_ready(timeout=600)
+    print("✓ Pod ready")
+
+    # 2. Setup environment
+    k8s.exec_command("apt-get update && apt-get install -y python3-pip curl")
+    k8s.exec_command("pip install guidellm")
+    print("✓ Environment setup complete")
+
+    # 3. Start vLLM server in background
+    vllm_cmd = build_vllm_command_string(config, port=8000)
+    k8s.exec_command(f"nohup {vllm_cmd} > /tmp/vllm.log 2>&1 &", background=True)
+    time.sleep(10)
+
+    # 4. Wait for vLLM ready
+    wait_for_vllm_in_pod(k8s, timeout=args.startup_timeout)
+    print("✓ vLLM server ready")
+
+    # 5. Create output directory and run GuideLLM in background
+    k8s.exec_command("mkdir -p /output/validation_results")
+    guidellm_cmd = build_guidellm_command_string(config, max_qps, "/output/validation_results")
+    k8s.exec_command(f"nohup {guidellm_cmd} > /tmp/guidellm.log 2>&1 &", background=True)
+    print("Running GuideLLM benchmark...")
+
+    # 6. Wait for GuideLLM completion
+    wait_for_guidellm_completion(k8s, "/output/validation_results", timeout=args.benchmark_timeout)
+    print("✓ GuideLLM benchmark completed")
+
+    # 7. Copy logs
+    vllm_log = k8s.read_file_from_pod("/tmp/vllm.log")
+    with open(os.path.join(args.output_dir, "vllm.log"), "w") as f:
+        f.write(vllm_log)
+
+    guidellm_log = k8s.read_file_from_pod("/tmp/guidellm.log")
+    with open(os.path.join(args.output_dir, "guidellm.log"), "w") as f:
+        f.write(guidellm_log)
+
+    # 8. Copy GuideLLM results
+    result_files = k8s.list_files_from_pod("/output/validation_results")
+    for pod_file in result_files:
+        if pod_file:
+            file_content = k8s.read_file_from_pod(pod_file)
+            local_filename = os.path.basename(pod_file)
+            with open(os.path.join(args.output_dir, local_filename), "w") as f:
+                f.write(file_content)
+
+    print(f"✓ Results saved to {args.output_dir}/")
+
+    # 9. Cleanup
+    if not args.keep_deployment:
+        k8s.delete_deployment()
+        print("✓ Deployment cleaned up")
+
+
 def main():
     import argparse
 
@@ -165,16 +568,29 @@ def main():
     parser.add_argument("--simulator", required=True, choices=["blis", "vidur"],
                         help="Simulator type (blis or vidur)")
     parser.add_argument("--output-dir", required=True, help="Output directory for results")
-    parser.add_argument("--vllm-port", type=int, default=8000, help="vLLM server port")
-    parser.add_argument("--startup-timeout", type=int, default=300,
-                        help="vLLM server startup timeout in seconds (default: 300)")
+    parser.add_argument("--startup-timeout", type=int, default=600,
+                        help="vLLM server startup timeout in seconds (default: 600)")
     parser.add_argument("--benchmark-timeout", type=int, default=3600,
                         help="GuideLLM benchmark timeout in seconds (default: 3600)")
+    parser.add_argument("--use-k8s", action="store_true",
+                        help="Create new Kubernetes deployment")
+    parser.add_argument("--deployment-name", type=str, default=None,
+                        help="Existing deployment name to use (alternative to --use-k8s)")
+    parser.add_argument("--namespace", default="diya",
+                        help="Kubernetes namespace")
+    parser.add_argument("--image", default="vllm/vllm-openai:v0.14.0",
+                        help="vLLM container image")
+    parser.add_argument("--keep-deployment", action="store_true",
+                        help="Keep deployment after completion (only for --use-k8s)")
 
     args = parser.parse_args()
 
-    # Ensure GuideLLM is installed
-    ensure_guidellm_installed()
+    # Validate arguments
+    if not args.use_k8s and not args.deployment_name:
+        parser.error("Either --use-k8s or --deployment-name must be specified")
+
+    if args.use_k8s and args.deployment_name:
+        parser.error("Cannot specify both --use-k8s and --deployment-name")
 
     # Load config and max QPS
     with open(args.results) as f:
@@ -186,22 +602,12 @@ def main():
     # Create output directory
     os.makedirs(args.output_dir, exist_ok=True)
 
-    # Set up vLLM server log file
-    vllm_log_file = os.path.join(args.output_dir, "vllm_server.log")
-
-    # Start vLLM server in background and run benchmark
-    with VLLMServerManager(
-        config,
-        port=args.vllm_port,
-        log_file=vllm_log_file,
-        startup_timeout=args.startup_timeout
-    ) as server:
-        run_guidellm_benchmark(
-            config,
-            max_qps,
-            args.output_dir,
-            benchmark_timeout=args.benchmark_timeout
-        )
+    if args.use_k8s:
+        # Create new deployment and run validation
+        run_k8s_validation(config, max_qps, args)
+    else:
+        # Use existing pod
+        run_pod_validation(config, max_qps, args)
 
     print(f"✓ Validation complete. Results in {args.output_dir}/")
 
