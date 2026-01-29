@@ -193,8 +193,8 @@ def plot_qps_comparison(blis_data: Dict, vidur_data: Dict, output_dir: Path):
 
     # Add abbreviation legend
     abbrev_text = 'BS = Batch Size\nMST = Max Scheduled Tokens\nMML = Max Model Length'
-    ax.text(0.98, 0.02, abbrev_text, transform=ax.transAxes,
-           fontsize=10, verticalalignment='bottom', horizontalalignment='right',
+    ax.text(0.02, 0.98, abbrev_text, transform=ax.transAxes,
+           fontsize=10, verticalalignment='top', horizontalalignment='left',
            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
 
     plt.tight_layout()
