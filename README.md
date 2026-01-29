@@ -24,22 +24,22 @@ export BLIS_ROOT=$(pwd)
 
 **Goal:** Find maximum QPS for a **single configuration** that meets SLO constraints.
 
-### Option A: Local Simulation (Fast)
+### Step 1: Local Simulation to get Saturation Thresholds
 
 ```bash
 # Find max QPS using BLIS simulator
-python qps_search.py --config test_config.json --simulator blis --output results.json
+python qps_search.py --config test_config_lowprefix.json --simulator blis --output results.json
 
 # Output: Max QPS, SLO metrics, runtime
 ```
 
-### Option B: Real vLLM Validation (Accurate)
+### Step 2: Real vLLM SLO Validation
 
 ```bash
 # Validate on Kubernetes with real vLLM + GuideLLM
 python saturation_orchestrator.py \
   --results results.json \
-  --config-name test_config.json \
+  --config-name test_config_lowprefix.json \
   --simulator blis \
   --use-k8s \
   --namespace diya \
