@@ -37,7 +37,7 @@ configs:
     gpu_memory_utilization: 0.90
     block_size: 16
 
-  - tp: 2
+  - tp: 1
     batch_size: 128
     max_scheduled_tokens: 2048
     max_model_len: 4096
@@ -51,7 +51,7 @@ configs:
     gpu_memory_utilization: 0.90
     block_size: 16
 
-  - tp: 2
+  - tp: 1
     batch_size: 256
     max_scheduled_tokens: 4096
     max_model_len: 8192

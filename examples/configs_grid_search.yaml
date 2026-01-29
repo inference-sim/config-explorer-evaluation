@@ -32,7 +32,7 @@ slos:
 # Provide lists of values to sweep over
 # All combinations will be generated automatically (Cartesian product)
 
-tp: [1, 2]
+tp: [1] # keep always as 1
 batch_size: [128, 256, 512]
 max_scheduled_tokens: [2048, 4096]
 max_model_len: [4096, 8192]

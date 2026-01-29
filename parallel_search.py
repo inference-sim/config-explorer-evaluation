@@ -383,8 +383,19 @@ def save_results(successful_results: List[Dict], failed_results: List[Dict],
             'timestamp': datetime.datetime.now().isoformat(),
             'model': base_config.get('model'),
             'hardware': base_config.get('hardware'),
-            'num_requests': base_config.get('num_requests'),
-            'slo_constraints': slos
+            'slo_constraints': slos,
+            'workload': {
+                'num_requests': base_config.get('num_requests'),
+                'prefix_tokens': base_config.get('prefix_tokens'),
+                'prompt_tokens': base_config.get('prompt_tokens'),
+                'prompt_tokens_stdev': base_config.get('prompt_tokens_stdev'),
+                'prompt_tokens_min': base_config.get('prompt_tokens_min'),
+                'prompt_tokens_max': base_config.get('prompt_tokens_max'),
+                'output_tokens': base_config.get('output_tokens'),
+                'output_tokens_stdev': base_config.get('output_tokens_stdev'),
+                'output_tokens_min': base_config.get('output_tokens_min'),
+                'output_tokens_max': base_config.get('output_tokens_max')
+            }
         },
         'summary': {
             'total_configs_evaluated': len(successful_results) + len(failed_results),
