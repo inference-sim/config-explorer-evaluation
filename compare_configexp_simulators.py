@@ -66,8 +66,8 @@ def calculate_metrics(blis_data: Dict, vidur_data: Dict) -> Dict[str, Any]:
         'vidur_slo_compliance': (vidur_meeting_slos / vidur_total * 100) if vidur_total > 0 else 0,
         'blis_best_qps': blis_best_qps,
         'vidur_best_qps': vidur_best_qps,
-        'blis_total_guidellm_runtime': blis_summary.get('total_guidellm_runtime_seconds', 0),
-        'vidur_total_guidellm_runtime': vidur_summary.get('total_guidellm_runtime_seconds', 0),
+        'blis_total_configexp_runtime': blis_summary.get('total_simulator_runtime_seconds', 0),
+        'vidur_total_configexp_runtime': vidur_summary.get('total_simulator_runtime_seconds', 0),
         'blis_mean_error_percent': np.mean(blis_errors) if blis_errors else 0,
         'vidur_mean_error_percent': np.mean(vidur_errors) if vidur_errors else 0,
         'blis_max_error_percent': max(blis_errors) if blis_errors else 0,
@@ -443,14 +443,14 @@ def display_summary_metrics(blis_data: Dict, vidur_data: Dict, metrics: Dict):
     qps_diff = ((metrics['blis_best_qps'] - metrics['vidur_best_qps']) / metrics['vidur_best_qps'] * 100) if metrics['vidur_best_qps'] > 0 else 0
     print(f"  → Difference: {qps_diff:+.1f}%")
 
-    print("\n⏱️  VALIDATION BENCHMARK DURATION:")
-    print(f"  BLIS Total:  {metrics['blis_total_guidellm_runtime']:.2f}s")
-    print(f"  Vidur Total: {metrics['vidur_total_guidellm_runtime']:.2f}s")
-    if metrics['blis_total_guidellm_runtime'] > 0:
-        speedup = metrics['vidur_total_guidellm_runtime'] / metrics['blis_total_guidellm_runtime']
-        print(f"  → {'BLIS' if speedup > 1 else 'Vidur'} benchmark took {speedup:.1f}x")
+    print("\n⏱️  CONFIG EXPLORATION DURATION:")
+    print(f"  BLIS Total:  {metrics['blis_total_configexp_runtime']:.2f}s")
+    print(f"  Vidur Total: {metrics['vidur_total_configexp_runtime']:.2f}s")
+    if metrics['blis_total_configexp_runtime'] > 0:
+        speedup = metrics['vidur_total_configexp_runtime'] / metrics['blis_total_configexp_runtime']
+        print(f"  → {'BLIS' if speedup > 1 else 'Vidur'} has a speedup of {speedup:.1f}x in Config Exploration.")
 
-    print("\n🎯 PREDICTION ACCURACY:")
+    print("\n🎯 SLO PREDICTION ACCURACY AT MAX QPS:")
     print(f"  BLIS Mean Error:   {metrics['blis_mean_error_percent']:.1f}% (max: {metrics['blis_max_error_percent']:.1f}%)")
     print(f"  Vidur Mean Error:  {metrics['vidur_mean_error_percent']:.1f}% (max: {metrics['vidur_max_error_percent']:.1f}%)")
 
@@ -485,11 +485,16 @@ def display_summary_metrics(blis_data: Dict, vidur_data: Dict, metrics: Dict):
               f"MST={config.get('max_scheduled_tokens')}, MML={config.get('max_model_len')}")
 
     print("\n💡 KEY INSIGHTS:")
-    if metrics['blis_slo_compliance'] >= metrics['vidur_slo_compliance']:
+    if abs(metrics['blis_slo_compliance'] - metrics['vidur_slo_compliance']) <= 1:
         print(f"  • BLIS and Vidur have similar SLO compliance rates")
     else:
         diff = metrics['vidur_slo_compliance'] - metrics['blis_slo_compliance']
         print(f"  • Vidur's predictions have {diff:.1f}% higher SLO compliance")
+
+    if metrics['blis_total_configexp_runtime'] < metrics['vidur_total_configexp_runtime']:
+        print(f"  • BLIS allows for faster configuration exploration")
+    else:
+        print(f"  • Vidur allows for faster configuration exploration")
 
     if abs(metrics['blis_mean_error_percent'] - metrics['vidur_mean_error_percent']) > 5:
         if metrics['blis_mean_error_percent'] < metrics['vidur_mean_error_percent']:
