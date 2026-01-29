@@ -141,7 +141,7 @@ def plot_qps_comparison(blis_data: Dict, vidur_data: Dict, output_dir: Path):
 
         if blis_config:
             config = blis_config['configuration']
-            label = f"Rank {rank}: BS={config.get('batch_size')}, MST={config.get('max_scheduled_tokens')}"
+            label = f"Rank {rank}: BS={config.get('batch_size')}, MST={config.get('max_scheduled_tokens')}, MML={config.get('max_model_len')}"
 
             config_data.append({
                 'label': label,
@@ -190,6 +190,12 @@ def plot_qps_comparison(blis_data: Dict, vidur_data: Dict, output_dir: Path):
                 fontsize=14, fontweight='bold')
     ax.legend(loc='lower right', fontsize=11)
     ax.grid(axis='x', alpha=0.3)
+
+    # Add abbreviation legend
+    abbrev_text = 'BS = Batch Size\nMST = Max Scheduled Tokens\nMML = Max Model Length'
+    ax.text(0.98, 0.02, abbrev_text, transform=ax.transAxes,
+           fontsize=10, verticalalignment='bottom', horizontalalignment='right',
+           bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
 
     plt.tight_layout()
     plt.savefig(output_dir / '02_qps_comparison.png', dpi=150, bbox_inches='tight')
