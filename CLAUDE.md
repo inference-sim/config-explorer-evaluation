@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+Do not create unnecessary documents unless explicitly instructed to do so.
+
 ## Repository Overview
 
 This repository contains three main projects for LLM inference simulation and capacity planning:

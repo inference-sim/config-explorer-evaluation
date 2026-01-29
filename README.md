@@ -1,87 +1,104 @@
-# vLLM Configuration Search Tool
+# vLLM Configuration Optimizer
 
-A unified tool for finding optimal vLLM configurations that maximize QPS while meeting tail latency SLOs. Supports both **BLIS** (fast and accurate coefficient-based simulator) and **Vidur** (ML-based Random Forest simulator).
+Find optimal vLLM configurations that maximize QPS while meeting tail latency SLOs.
 
-## Features
-
-- **Binary Search for Max QPS**: Find the maximum queries-per-second that meets all SLO constraints with configurable precision (default: 0.01 QPS)
-- **Multi-SLO Support**: Enforce multiple simultaneous latency constraints (e.g., P95 E2E + P90 TTFT)
-- **Parallel Config Search**: Evaluate multiple configurations concurrently using multiprocessing
-- **Dual Simulator Support**: Switch between BLIS and Vidur with a single `--simulator` flag
-- **Automatic KV Cache Calculation**: Uses config_explorer library to compute optimal `total_kv_blocks`
-- **Runtime Tracking**: Reports total runtime and per-config runtime for performance analysis
-- **Flexible Config Format**: Supports both JSON and YAML config files
-- **Grid Search**: Automatically generates Cartesian product from parameter lists
-- **TP Search**: Tensor Parallelism as a searchable parameter
-
-## Quick Start
-
-### Prerequisites
+## Prerequisites
 
 ```bash
-# Python 3.11+ required
-python --version
+# Python 3.11+, Go 1.21+
+python --version && go version
 
 # Install config_explorer library
 git clone https://github.com/llm-d/llm-d-benchmark.git
 pip install -e ./llm-d-benchmark/config_explorer
 
-# Build BLIS (openevolve branch for trace file support)
-cd inference-sim
-git checkout openevolve
-go build -o ../simulation_worker main.go
-cd ..
+# Build BLIS (openevolve branch)
+cd inference-sim && git checkout openevolve
+go build -o ../simulation_worker main.go && cd ..
 
-# Set BLIS_ROOT environment variable
+# Set environment variable
 export BLIS_ROOT=$(pwd)
 ```
 
-### Single-Config Search (qps_search.py)
+## Task 1: Saturation Detection
 
-Find max QPS for a single configuration:
+**Goal:** Find maximum QPS for a **single configuration** that meets SLO constraints.
+
+### Option A: Local Simulation (Fast)
 
 ```bash
-# BLIS (fast and accurate, recommended)
-python qps_search.py --config test_config.json --simulator blis
+# Find max QPS using BLIS simulator
+python qps_search.py --config test_config.json --simulator blis --output results.json
 
-# Vidur (ML-based)
-python qps_search.py --config test_config.json --simulator vidur
-
-# With YAML config
-python qps_search.py --config examples/configs_grid_search.yaml --simulator blis
-
-# Custom search parameters
-python qps_search.py -c test_config.json --simulator blis \
-  --qps-min 1.0 --qps-max 50.0 --qps-granularity 0.1
+# Output: Max QPS, SLO metrics, runtime
 ```
 
-### Multi-Config Search (parallel_search.py)
-
-Evaluate multiple configurations in parallel:
+### Option B: Real vLLM Validation (Accurate)
 
 ```bash
-# Grid search (sweeps TP, batch size, etc.)
+# Validate on Kubernetes with real vLLM + GuideLLM
+python saturation_orchestrator.py \
+  --results results.json \
+  --config-name test_config.json \
+  --simulator blis \
+  --use-k8s \
+  --namespace diya \
+  --output-dir saturation_results
+```
+
+## Task 2: Config Exploration
+
+**Goal:** Find the **best configuration** from multiple candidates.
+
+### Step 1: Simulate Multiple Configs
+
+```bash
+# Parallel search across config space
 python parallel_search.py \
   --configs examples/configs_grid_search.yaml \
   --simulator blis \
-  --num-workers 4
+  --output results/config_exp/blis_config_exploration.json
+```
 
-# With output file
-python parallel_search.py \
-  -c examples/configs_explicit.yaml \
+### Step 2: Validate Top Configs on Real vLLM
+
+```bash
+# Validate top 3 configs in parallel on Kubernetes (creates 3 pods concurrently)
+python config_validator.py \
   --simulator blis \
-  --output results.json
+  --results results/config_exp/blis_config_exploration.json \
+  --top-n 3 \
+  --namespace diya \
+  --output-file blis_validation_report.json
 
-# Vidur simulator
-python parallel_search.py \
-  -c examples/configs_grid_search.yaml \
+# Do the same for Vidur (if testing both simulators)
+python config_validator.py \
   --simulator vidur \
-  --num-workers 2
+  --results results/config_exp/vidur_config_exploration.json \
+  --top-n 3 \
+  --namespace diya \
+  --output-file vidur_validation_report.json
+
+# Creates:
+# - blis_validation_report.json (summary + metrics)
+# - vidur_validation_report.json (summary + metrics)
+# Note: Runs in true parallel (3 configs = 3× faster)
+# Temp logs cleaned up automatically (use --keep-logs to preserve)
+```
+
+### Step 3: Compare Simulator Predictions vs Real vLLM
+
+```bash
+# Generate 6 comparison plots showing prediction accuracy
+python compare_simulators.py \
+  blis_validation_report.json \
+  vidur_validation_report.json \
+  -o validation_comparison_plots/
 ```
 
 ## Configuration Files
 
-### JSON Format (for qps_search.py)
+### JSON (for qps_search.py)
 
 ```json
 {
@@ -93,39 +110,25 @@ python parallel_search.py \
   "max_model_len": 8192,
   "gpu_memory_utilization": 0.90,
   "block_size": 16,
-  "vllm_version": "vllm/vllm-openai:v0.8.4",
   "num_requests": 500,
-
-  "model_config_folder_base": "model_configs",
-  "hardware_config": "hardware_config.json",
-
   "slos": [
-    {"metric": "e2e_p95_ms", "threshold_ms": 1000},
-    {"metric": "ttft_p90_ms", "threshold_ms": 500}
+    {"metric": "e2e_p95_ms", "threshold_ms": 1000}
   ]
 }
 ```
 
-### YAML Format (for parallel_search.py)
-
-**Grid Search** (automatic Cartesian product):
+### YAML (for parallel_search.py)
 
 ```yaml
 model: codellama/CodeLlama-34b-Instruct-hf
 hardware: H100
-vllm_version: vllm/vllm-openai:v0.8.4
 num_requests: 100
 
-# Roofline model parameters (optional)
-model_config_folder_base: model_configs
-hardware_config: hardware_config.json
-
-# SLO constraints
 slos:
   - metric: e2e_p95_ms
     threshold_ms: 1000
 
-# Grid search parameters (lists = sweep)
+# Grid search (Cartesian product)
 tp: [1, 2]
 batch_size: [128, 256, 512]
 max_scheduled_tokens: [2048, 4096]
@@ -134,198 +137,84 @@ gpu_memory_utilization: [0.90]
 block_size: [16]
 ```
 
-**Explicit Configs**:
-
-```yaml
-model: codellama/CodeLlama-34b-Instruct-hf
-hardware: H100
-num_requests: 500
-
-slos:
-  - metric: e2e_p95_ms
-    threshold_ms: 1000
-
-configs:
-  - batch_size: 128
-    max_scheduled_tokens: 4096
-    max_model_len: 4096
-    gpu_memory_utilization: 0.90
-    block_size: 16
-
-  - batch_size: 256
-    max_scheduled_tokens: 8192
-    max_model_len: 8192
-    gpu_memory_utilization: 0.90
-    block_size: 16
-```
-
 ## Available SLO Metrics
 
-- **End-to-End**: `e2e_mean_ms`, `e2e_p90_ms`, `e2e_p95_ms`, `e2e_p99_ms`
-- **Time to First Token (TTFT)**: `ttft_mean_ms`, `ttft_p90_ms`, `ttft_p95_ms`, `ttft_p99_ms`
-- **Inter-Token Latency (ITL)**: `itl_mean_ms`, `itl_p90_ms`, `itl_p95_ms`, `itl_p99_ms`
+- **End-to-End**: `e2e_p90_ms`, `e2e_p95_ms`, `e2e_p99_ms`
+- **Time to First Token**: `ttft_p90_ms`, `ttft_p95_ms`, `ttft_p99_ms`
+- **Inter-Token Latency**: `itl_p90_ms`, `itl_p95_ms`, `itl_p99_ms`
 
-## Output
+## Output Examples
 
-### Console Output
+### Saturation Detection (qps_search.py)
 
 ```
-QPS Search - BLIS Simulator
-============================================================
-
-Configuration:
-  Model: codellama/CodeLlama-34b-Instruct-hf
-  Hardware: H100
-  TP: 1
-  Batch Size: 256
-  Hardware Config: hardware_config.json
-  Model Config Base: model_configs
-  Roofline Model: ENABLED
-
-Starting Binary Search for Max QPS
-...
-
-============================================================
 ✅ Search completed successfully!
-============================================================
 
 Results:
   Max QPS: 15.50
-  Total Runtime: 182.47 seconds
 
 SLO Metrics at Max QPS:
   ✅ e2e_p95_ms: 987.32 ms (SLO: 1000 ms)
-  ✅ ttft_p90_ms: 456.78 ms (SLO: 500 ms)
-
-Best Config achieves 15.50 QPS
-Total Search Runtime: 182.47 seconds
 ```
 
-### JSON Output (--output results.json)
+### Config Exploration (parallel_search.py)
 
 ```json
 {
-  "metadata": {
-    "simulator": "BLIS",
-    "timestamp": "2026-01-27T10:30:00",
-    "model": "codellama/CodeLlama-34b-Instruct-hf",
-    "hardware": "H100"
-  },
   "summary": {
-    "total_configs_evaluated": 8,
-    "successful_configs": 7,
-    "failed_configs": 1,
-    "best_max_qps": 15.50,
-    "total_search_runtime_seconds": 182.47
+    "total_configs_evaluated": 24,
+    "best_config_id": 2,
+    "best_max_qps": 15.50
   },
   "successful_configs": [
     {
       "rank": 1,
+      "config_id": 2,
       "max_qps": 15.50,
-      "runtime_seconds": 45.32,
       "configuration": {
         "tp": 1,
         "batch_size": 256,
-        "max_scheduled_tokens": 8192,
-        "max_model_len": 8192,
-        "gpu_memory_utilization": 0.90
-      },
-      "slo_metrics": {
-        "e2e_p95_ms": {
-          "value_ms": 987.32,
-          "threshold_ms": 1000,
-          "passes": true
-        }
+        "max_scheduled_tokens": 8192
       }
     }
   ]
 }
 ```
 
-## BLIS vs Vidur
+### Validation Report (config_validator.py)
 
-| Aspect | BLIS | Vidur |
-|--------|------|-------|
-| **Speed** | Fast (~5-10s/config) | Slower (~30-60s/config) |
-| **Accuracy** | High (more accurate) | Lower (less accurate) |
-| **Latency Model** | Linear coefficients | Random Forest ML |
-| **Setup** | Simple (pre-trained) | Complex (GPU profiling) |
-| **Recommendation** | Production use | Research/ML experiments |
-
-**Use BLIS for production capacity planning** - it's faster and more accurate.
-
-## Project Structure
-
-```
-config-explorer-evaluation/
-├── qps_search.py              # Single-config binary search
-├── parallel_search.py         # Multi-config parallel search
-├── blis_runner.py            # BLIS simulator interface
-├── vidur_runner.py           # Vidur simulator interface
-├── capacity_planner.py       # KV cache capacity calculation
-├── test_config.json          # Example JSON config
-├── examples/
-│   ├── configs_grid_search.yaml   # Grid search example
-│   └── configs_explicit.yaml      # Explicit configs example
-├── SETUP.md                  # Detailed setup guide
-├── README_STEP*.md           # Step-by-step guides
-└── STEP*_SUMMARY.md          # Implementation summaries
+```json
+{
+  "timestamp": "2026-01-28 10:30:00",
+  "simulator": "BLIS",
+  "summary": {
+    "total_configs_tested": 3,
+    "configs_meeting_slos": 2,
+    "total_guidellm_runtime_seconds": 1245.67
+  },
+  "results": [{
+    "config_id": 2,
+    "rank": 1,
+    "meets_slos": true,
+    "output_dir": "validation_report_configs/config_2_rank_1",
+    "slo_metrics": {
+      "e2e_p95_ms": {
+        "simulator_ms": 987.32,
+        "real_ms": 995.10,
+        "error_percent": 0.79,
+        "passes": true
+      }
+    }
+  }]
+}
 ```
 
 ## Documentation
 
+- **[all_docs/README_CONFIG_VALIDATOR.md](all_docs/README_CONFIG_VALIDATOR.md)** - Config validation guide
+- **[all_docs/README_SATURATION_VALIDATION.md](all_docs/README_SATURATION_VALIDATION.md)** - Saturation detection guide
 - **[SETUP.md](SETUP.md)** - Detailed setup instructions
-- **[README_STEP1.md](README_STEP1.md)** - BLIS runner and capacity planner
-- **[README_STEP2.md](README_STEP2.md)** - Binary search for max QPS
-- **[README_STEP3.md](README_STEP3.md)** - Parallel config search
-- **[README_STEP4.md](README_STEP4.md)** - Vidur integration
 
-## Requirements
-
-- Python 3.11+
-- Go 1.21+ (for BLIS)
-- Dependencies:
-  - `config_explorer` library from llm-d-benchmark
-  - `numpy`, `pandas`, `pyyaml`
-  - Standard library modules
-
-## Key Features Explained
-
-### Automatic KV Cache Calculation
-
-The tool automatically calculates `total_kv_blocks` from:
-- Model architecture (fetched from HuggingFace)
-- Hardware memory (H100 = 80GB)
-- `max_model_len` (user-specified)
-- `gpu_memory_utilization` (user-specified)
-
-No need to manually tune `total_kv_blocks`!
-
-### Roofline Model Support
-
-For hardware without pre-trained coefficients, specify:
-```json
-{
-  "model_config_folder_base": "model_configs",
-  "hardware_config": "hardware_config.json"
-}
-```
-
-BLIS will use the roofline model for accurate predictions.
-
-### Runtime Tracking
-
-All tools report:
-- Total search runtime
-- Per-config runtime (in parallel_search.py)
-- Simulation time per QPS test
-
-Helps identify performance bottlenecks.
-
-## Contributing
-
-This is a research tool for vLLM configuration optimization. Contributions welcome!
-
-## License
-
-See individual component licenses (BLIS, Vidur, llm-d-benchmark).
+- Python 3.11+, Go 1.21+
+- Kubernetes cluster with H100 GPUs (for validation only)
+- Dependencies: `config_explorer`, `numpy`, `pyyaml`, `kubernetes`
