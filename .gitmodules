@@ -1,6 +1,3 @@
-[submodule "inference-sim"]
-	path = inference-sim
-	url = https://github.com/inference-sim/inference-sim.git
 [submodule "vidur"]
 	path = vidur
 	url = https://github.com/microsoft/vidur.git

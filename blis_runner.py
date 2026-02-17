@@ -89,7 +89,7 @@ def run_blis(
 
     # Build command - all paths relative to BLIS_ROOT
     blis_binary = blis_root / "simulation_worker"
-    defaults_file = blis_root / "inference-sim" / "defaults.yaml"
+    defaults_file = blis_root / "defaults.yaml"
 
     if not blis_binary.exists():
         raise FileNotFoundError(
